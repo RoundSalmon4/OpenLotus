@@ -135,6 +135,9 @@ object Commands {
         val r = red.coerceIn(0, 255)
         val g = green.coerceIn(0, 255)
         val b = blue.coerceIn(0, 255)
+        if (r != red || g != green || b != blue) {
+            ProtocolLog.log("music color clamped $red,$green,$blue -> $r,$g,$b")
+        }
         return Frame.logged(
             "music color $r,$g,$b",
             Frame.of(0x7E, 0x07, 0x05, 0x03, r, g, b, 0x20, 0xEF),
@@ -145,6 +148,9 @@ object Commands {
     fun colorTemperature(warm: Int, cold: Int): ByteArray {
         val w = warm.coerceIn(0, 255)
         val c = cold.coerceIn(0, 255)
+        if (w != warm || c != cold) {
+            ProtocolLog.log("color temperature clamped $warm,$cold -> $w,$c")
+        }
         return Frame.logged(
             "color temperature $w,$c",
             Frame.of(0x7E, 0x06, 0x05, 0x02, w, c, 0xFF, 0x08, 0xEF),
@@ -154,6 +160,7 @@ object Commands {
     // Built but not wired into the UI yet, needs a real strip test first.
     fun singleColor(value: Int): ByteArray {
         val v = value.coerceIn(0, 255)
+        if (v != value) ProtocolLog.log("single color clamped $value -> $v")
         return Frame.logged(
             "single color $v",
             Frame.of(0x7E, 0x05, 0x05, 0x01, v, 0xFF, 0xFF, 0x08, 0xEF),
@@ -180,6 +187,9 @@ object Commands {
         val r = red.coerceIn(1, 3)
         val g = green.coerceIn(1, 3)
         val b = blue.coerceIn(1, 3)
+        if (r != red || g != green || b != blue) {
+            ProtocolLog.log("pin order clamped $red,$green,$blue -> $r,$g,$b")
+        }
         return Frame.logged(
             "pin order $r,$g,$b",
             Frame.of(0x7E, 0x06, 0x81, r, g, b, 0xFF, 0x00, 0xEF),
@@ -189,6 +199,7 @@ object Commands {
     // Built but not wired into the UI yet, needs a real strip test first.
     fun micSensitivity(value: Int): ByteArray {
         val v = value.coerceIn(0, 100)
+        if (v != value) ProtocolLog.log("mic sensitivity clamped $value -> $v")
         return Frame.logged(
             "mic sensitivity $v",
             Frame.of(0x7E, 0x04, 0x06, v, 0xFF, 0xFF, 0xFF, 0x00, 0xEF),
@@ -207,6 +218,9 @@ object Commands {
         val m = minute.coerceIn(0, 59)
         val s = second.coerceIn(0, 59)
         val w = weekday.coerceIn(0, 7)
+        if (h != hour || m != minute || s != second || w != weekday) {
+            ProtocolLog.log("clock clamped $hour:$minute:$second day $weekday -> $h:$m:$s day $w")
+        }
         return Frame.logged(
             "clock $h:$m:$s day $w",
             Frame.of(0x7E, 0x07, 0x83, h, m, s, w, 0xFF, 0xEF),
@@ -220,6 +234,9 @@ object Commands {
         val s = second.coerceIn(0, 59)
         val md = mode.coerceIn(0, 0xFF)
         val wd = weekdays.coerceIn(0, 0xFF)
+        if (h != hour || m != minute || s != second || md != mode || wd != weekdays) {
+            ProtocolLog.log("schedule clamped $hour:$minute:$second mode $mode days $weekdays -> $h:$m:$s mode $md days $wd")
+        }
         return Frame.logged(
             "schedule $h:$m:$s mode $md days ${Integer.toBinaryString(wd)}",
             Frame.of(0x7E, 0x08, 0x82, h, m, s, md, wd, 0xEF),
@@ -243,6 +260,9 @@ object LegacyCommands {
         val r = red.coerceIn(0, 255)
         val g = green.coerceIn(0, 255)
         val b = blue.coerceIn(0, 255)
+        if (r != red || g != green || b != blue) {
+            ProtocolLog.log("legacy color clamped $red,$green,$blue -> $r,$g,$b")
+        }
         return Frame.logged(
             "legacy color $r,$g,$b",
             Frame.of(0x7E, 0x00, 0x05, 0x03, r, g, b, 0x00, 0xEF),
@@ -251,6 +271,7 @@ object LegacyCommands {
 
     fun brightness(value: Int): ByteArray {
         val v = value.coerceIn(0, 100)
+        if (v != value) ProtocolLog.log("legacy brightness clamped $value -> $v")
         return Frame.logged(
             "legacy brightness $v",
             Frame.of(0x7E, 0x00, 0x01, v, 0x00, 0x00, 0x00, 0x00, 0xEF),
@@ -259,6 +280,7 @@ object LegacyCommands {
 
     fun mode(code: Int): ByteArray {
         val c = code.coerceIn(0, 255)
+        if (c != code) ProtocolLog.log("legacy mode clamped $code -> $c")
         return Frame.logged(
             "legacy mode 0x%02X".format(c),
             Frame.of(0x7E, 0x00, 0x03, c, 0x03, 0x00, 0x00, 0x00, 0xEF),
@@ -267,6 +289,7 @@ object LegacyCommands {
 
     fun speed(value: Int): ByteArray {
         val v = value.coerceIn(0, 100)
+        if (v != value) ProtocolLog.log("legacy speed clamped $value -> $v")
         return Frame.logged(
             "legacy speed $v",
             Frame.of(0x7E, 0x00, 0x02, v, 0x00, 0x00, 0x00, 0x00, 0xEF),

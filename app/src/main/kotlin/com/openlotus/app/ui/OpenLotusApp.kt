@@ -88,7 +88,7 @@ private val presets = listOf(
 
 @Composable
 fun OpenLotusApp() {
-    AppLog.v(TAG, "OpenLotusApp()")
+    AppLog.t(TAG, "OpenLotusApp()")
     val context = LocalContext.current
     val ble = remember { BleManager(context) }
     val scope = rememberCoroutineScope()
@@ -190,7 +190,7 @@ fun OpenLotusApp() {
 
 @Composable
 private fun DeviceScreen(ble: BleManager) {
-    AppLog.v(TAG, "DeviceScreen()")
+    AppLog.t(TAG, "DeviceScreen()")
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Status: ${ble.status}", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(8.dp))
@@ -225,7 +225,7 @@ private fun DeviceScreen(ble: BleManager) {
 
 @Composable
 private fun DeviceRow(device: BleDevice, connected: Boolean, onClick: () -> Unit) {
-    AppLog.v(TAG, "DeviceRow(${device.address}, connected=$connected)")
+    AppLog.t(TAG, "DeviceRow(${device.address}, connected=$connected)")
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -259,7 +259,7 @@ private fun ControlScreen(
     scope: CoroutineScope,
     store: SettingsStore,
 ) {
-    AppLog.v(TAG, "ControlScreen()")
+    AppLog.t(TAG, "ControlScreen()")
     val connected = ble.connectedDevice != null
     var brightness by rememberSaveable { mutableStateOf(60) }
     var speed by rememberSaveable { mutableStateOf(50) }
@@ -584,7 +584,7 @@ private fun ControlScreen(
 
 @Composable
 private fun LogScreen() {
-    AppLog.v(TAG, "LogScreen()")
+    AppLog.t(TAG, "LogScreen()")
     val listState = rememberLazyListState()
     val count = AppLog.lines.size
     LaunchedEffect(count) {
@@ -627,11 +627,11 @@ private fun LabeledSlider(
         Slider(
             value = value,
             onValueChange = {
-                AppLog.v(TAG, "slider $label -> $it")
+                AppLog.t(TAG, "slider $label -> $it")
                 onChange(it)
             },
             onValueChangeFinished = {
-                AppLog.v(TAG, "slider $label finished")
+                AppLog.t(TAG, "slider $label finished")
                 onFinished()
             },
             valueRange = range,
@@ -642,7 +642,7 @@ private fun LabeledSlider(
 
 @Composable
 private fun PermissionBanner(onRequest: () -> Unit, onSettings: () -> Unit) {
-    AppLog.v(TAG, "PermissionBanner()")
+    AppLog.t(TAG, "PermissionBanner()")
     Column(
         modifier = Modifier
             .fillMaxWidth()

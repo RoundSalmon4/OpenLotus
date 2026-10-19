@@ -10,13 +10,14 @@ import java.util.Locale
 
 /**
  * Single place for debug output. Everything also goes to logcat, and the last
- * [MAX_LINES] lines are kept in memory so the Log tab in the app can show them
- * without a cable.
+ * [MAX_LINES] lines of debug, error and verbose output are kept in memory so the
+ * Log tab in the app can show them without a cable. Only [t] traces stay out of
+ * the in memory buffer.
  */
 object AppLog {
 
     private const val TAG = "OpenLotus"
-    private const val MAX_LINES = 1000
+    private const val MAX_LINES = 1500
 
     private val stamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     private val lock = Any()
@@ -44,8 +45,18 @@ object AppLog {
         record("E", tag, message + suffix)
     }
 
-    /** Noisy events, logcat only. Used for things that fire many times a second. */
+    /** Verbose events, kept in memory and in logcat. */
     fun v(tag: String, message: String) {
+        Log.v("$TAG/$tag", message)
+        record("V", tag, message)
+    }
+
+    /**
+     * Render level traces, logcat only. Used for things that fire on every
+     * recomposition or every slider movement, which would bury the useful lines
+     * in the in app log.
+     */
+    fun t(tag: String, message: String) {
         Log.v("$TAG/$tag", message)
     }
 

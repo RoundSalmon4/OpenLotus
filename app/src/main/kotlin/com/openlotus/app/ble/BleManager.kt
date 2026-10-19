@@ -244,11 +244,13 @@ class BleManager(private val context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val result = current.writeCharacteristic(characteristic, frame, type)
                 AppLog.v(TAG, "writeCharacteristic result $result")
+                if (result != 0) AppLog.e(TAG, "write rejected, status $result")
             } else {
                 characteristic.writeType = type
                 characteristic.value = frame
                 val accepted = current.writeCharacteristic(characteristic)
                 AppLog.v(TAG, "writeCharacteristic accepted $accepted")
+                if (!accepted) AppLog.e(TAG, "write rejected")
             }
         } catch (e: SecurityException) {
             AppLog.e(TAG, "send denied", e)
@@ -313,6 +315,7 @@ class BleManager(private val context: Context) {
             try {
                 val accepted = gatt.requestMtu(63)
                 AppLog.v(TAG, "requestMtu accepted $accepted")
+                if (!accepted) AppLog.e(TAG, "requestMtu rejected")
             } catch (e: SecurityException) {
                 AppLog.e(TAG, "requestMtu denied", e)
             }

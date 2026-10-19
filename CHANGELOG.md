@@ -8,7 +8,8 @@ Dates are based on UTC.
 - gradle project, protocol module with frame tests, CI build
 - compose app: device scan, power, brightness, speed, color, modes, clock sync
 - color sequence player
-- debug logging through every layer, plus a log tab in the app
+- debug logging through every layer, plus a log tab in the app that keeps the
+  verbose lines too, so a dropped write or a bad saved step shows up there
 - ci can also build a release apk on demand (unsigned, needs your own keystore)
 - unit tests for the sequence player, run in ci
 - dropped a little dead code and marked the parts that wait on hardware testing

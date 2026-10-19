@@ -27,6 +27,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        AppLog.d("app", "onStart")
+    }
+
+    override fun onStop() {
+        AppLog.d("app", "onStop")
+        super.onStop()
+    }
+
     override fun onDestroy() {
         AppLog.d("app", "onDestroy")
         super.onDestroy()

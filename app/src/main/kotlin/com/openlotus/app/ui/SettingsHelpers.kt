@@ -15,9 +15,11 @@ private const val DEFAULT_DWELL = 800L
  * unit tests, so we cannot rely on them here.
  */
 fun sequenceToJson(items: List<Pair<Int, Int>>): String = try {
-    items.joinToString(prefix = "[", postfix = "]", separator = ",") { (color, dwell) ->
+    val json = items.joinToString(prefix = "[", postfix = "]", separator = ",") { (color, dwell) ->
         "${color.toLong() and MASK}:${clampDwell(dwell)}"
     }
+    AppLog.v(TAG, "sequenceToJson ${items.size} steps")
+    json
 } catch (e: Exception) {
     AppLog.e(TAG, "sequenceToJson failed", e)
     "[]"
@@ -28,7 +30,14 @@ fun jsonToSequence(json: String): List<Pair<Int, Int>> = try {
     if (body.isBlank()) {
         emptyList()
     } else {
-        body.split(',').mapNotNull { parseStep(it.trim()) }
+        val steps = body.split(',').mapNotNull { token ->
+            val t = token.trim()
+            val step = parseStep(t)
+            if (step == null && t.isNotEmpty()) AppLog.d(TAG, "skipping bad step '$t'")
+            step
+        }
+        AppLog.v(TAG, "jsonToSequence ${steps.size} steps from ${json.length}b")
+        steps
     }
 } catch (e: Exception) {
     AppLog.e(TAG, "jsonToSequence failed", e)

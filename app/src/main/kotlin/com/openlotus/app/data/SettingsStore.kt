@@ -98,8 +98,8 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    private fun mapToSettings(prefs: Preferences): Settings =
-        Settings(
+    private fun mapToSettings(prefs: Preferences): Settings {
+        val settings = Settings(
             brightness = prefs[Keys.brightness] ?: 60,
             speed = prefs[Keys.speed] ?: 50,
             red = prefs[Keys.red] ?: 255,
@@ -111,4 +111,13 @@ class SettingsStore(private val context: Context) {
             lastDeviceAddress = prefs[Keys.lastDeviceAddress] ?: "",
             lastDeviceName = prefs[Keys.lastDeviceName] ?: "",
         )
+        AppLog.v(
+            TAG,
+            "loaded brightness=${settings.brightness} speed=${settings.speed} " +
+                "rgb=${settings.red},${settings.green},${settings.blue} " +
+                "dwell=${settings.dwellMs} power=${settings.powerOn} " +
+                "sequence=${settings.sequenceJson.length}b last=${settings.lastDeviceAddress}",
+        )
+        return settings
+    }
 }
