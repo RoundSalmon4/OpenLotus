@@ -100,4 +100,34 @@ class ProtocolTest {
             assertEquals(mode.code, Commands.mode(mode)[3].toInt() and 0xFF)
         }
     }
+
+    @Test
+    fun logSinkSeesEveryFrame() {
+        val seen = mutableListOf<String>()
+        ProtocolLog.sink = { seen.add(it) }
+        try {
+            Commands.power(true)
+            Commands.color(1, 2, 3)
+            Commands.mode(Mode.STROBE_WHITE)
+            LegacyCommands.speed(10)
+        } finally {
+            ProtocolLog.sink = null
+        }
+        assertEquals(4, seen.size)
+        assertEquals("power on -> 7E 04 04 01 00 01 FF 00 EF", seen[0])
+        assertEquals("color 1,2,3 -> 7E 07 05 03 01 02 03 10 EF", seen[1])
+        assertEquals("legacy speed 10 -> 7E 00 02 0A 00 00 00 00 EF", seen[3])
+    }
+
+    @Test
+    fun clampsAreLogged() {
+        val seen = mutableListOf<String>()
+        ProtocolLog.sink = { seen.add(it) }
+        try {
+            Commands.brightness(200)
+        } finally {
+            ProtocolLog.sink = null
+        }
+        assertEquals(true, seen.any { it.contains("clamped 200 -> 100") })
+    }
 }
