@@ -23,3 +23,6 @@ Dates are based on UTC.
 - remembers the last strip and reconnects to it, including after a dropped link
 - the sequence takes any color from the RGB sliders, plus off steps, so an
   orange and black alternation is just two steps
+- fixed the layout drawing under the status bar, which hid the tabs behind the
+  camera cutout on a pixel 7 (edge to edge insets)
+- one scan line per device per scan, so a busy room does not flood the log tab

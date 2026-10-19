@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import com.openlotus.app.log.AppLog
 import com.openlotus.protocol.Frame
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 data class BleDevice(val name: String, val address: String)
 
@@ -46,9 +47,7 @@ class BleManager(private val context: Context) {
 
         private fun isSupported(name: String?): Boolean {
             if (name.isNullOrBlank()) return false
-            val match = NAME_PREFIXES.any { name.startsWith(it) }
-            AppLog.v(TAG, "isSupported($name) = $match")
-            return match
+            return NAME_PREFIXES.any { name.startsWith(it) }
         }
     }
 
@@ -92,12 +91,19 @@ class BleManager(private val context: Context) {
         }
     }
 
+    // One advertisement line per device per scan. A busy area repeats the same
+    // addresses many times a second, which would bury everything else.
+    private val seenAddresses = ConcurrentHashMap.newKeySet<String>()
+
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val device = result.device ?: return
             val name = device.name ?: result.scanRecord?.deviceName ?: return
-            AppLog.v(TAG, "scan result $name ${device.address} rssi ${result.rssi}")
-            if (!isSupported(name)) return
+            val supported = isSupported(name)
+            if (seenAddresses.add(device.address)) {
+                AppLog.v(TAG, "scan found $name ${device.address} rssi ${result.rssi} supported=$supported")
+            }
+            if (!supported) return
             post {
                 if (devices.none { it.address == device.address }) {
                     AppLog.d(TAG, "found $name ${device.address}")
@@ -124,6 +130,7 @@ class BleManager(private val context: Context) {
             return
         }
         devices.clear()
+        seenAddresses.clear()
         try {
             val scanner = adapter.bluetoothLeScanner
             if (scanner == null) {
