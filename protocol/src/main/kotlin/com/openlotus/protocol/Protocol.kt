@@ -25,7 +25,6 @@ object ProtocolLog {
 object Frame {
     const val START: Int = 0x7E
     const val END: Int = 0xEF
-    const val NONE: Int = 0xFF
 
     fun of(vararg bytes: Int): ByteArray {
         if (bytes.size != 9) {
@@ -48,6 +47,10 @@ object Frame {
     }
 }
 
+/**
+ * The light target a brightness write applies to. Only [ALL] is wired into the
+ * UI so far; the rest are here because the protocol defines them.
+ */
 enum class LightMode(val code: Int) {
     ALL(0),
     RGB(1),
@@ -126,6 +129,7 @@ object Commands {
         )
     }
 
+    // Built but not wired into the UI yet, needs a real strip test first.
     /** Same as [color] but tagged as music driven (flag 0x20). */
     fun musicColor(red: Int, green: Int, blue: Int): ByteArray {
         val r = red.coerceIn(0, 255)
@@ -137,6 +141,7 @@ object Commands {
         )
     }
 
+    // Built but not wired into the UI yet, needs a real strip test first.
     fun colorTemperature(warm: Int, cold: Int): ByteArray {
         val w = warm.coerceIn(0, 255)
         val c = cold.coerceIn(0, 255)
@@ -146,6 +151,7 @@ object Commands {
         )
     }
 
+    // Built but not wired into the UI yet, needs a real strip test first.
     fun singleColor(value: Int): ByteArray {
         val v = value.coerceIn(0, 255)
         return Frame.logged(
@@ -169,6 +175,7 @@ object Commands {
         )
     }
 
+    // Built but not wired into the UI yet, needs a real strip test first.
     fun pinSequence(red: Int, green: Int, blue: Int): ByteArray {
         val r = red.coerceIn(1, 3)
         val g = green.coerceIn(1, 3)
@@ -179,6 +186,7 @@ object Commands {
         )
     }
 
+    // Built but not wired into the UI yet, needs a real strip test first.
     fun micSensitivity(value: Int): ByteArray {
         val v = value.coerceIn(0, 100)
         return Frame.logged(
@@ -187,6 +195,7 @@ object Commands {
         )
     }
 
+    // Built but not wired into the UI yet, needs a real strip test first.
     fun micEnabled(on: Boolean): ByteArray =
         Frame.logged(
             if (on) "mic on" else "mic off",
@@ -204,6 +213,7 @@ object Commands {
         )
     }
 
+    // Built but not wired into the UI yet, needs a real strip test first.
     fun schedule(hour: Int, minute: Int, second: Int, mode: Int, weekdays: Int): ByteArray {
         val h = hour.coerceIn(0, 23)
         val m = minute.coerceIn(0, 59)
@@ -218,8 +228,9 @@ object Commands {
 }
 
 /**
- * Older frames documented by the ELK-BLEDOM community. Kept around so we can
- * switch dialects once hardware testing decides which one a given strip wants.
+ * Older frames documented by the ELK-BLEDOM community. Nothing calls these yet,
+ * there is no runtime dialect switch. Kept so one can be wired once hardware
+ * testing decides which dialect a given strip wants.
  */
 object LegacyCommands {
     fun powerOn(): ByteArray =

@@ -36,12 +36,12 @@ class BleManager(private val context: Context) {
     companion object {
         private const val TAG = "ble"
 
-        val SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
-        val CHAR_UUID: UUID = UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb")
+        private val SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
+        private val CHAR_UUID: UUID = UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb")
 
         private val NAME_PREFIXES = listOf("ELK-", "ELK~", "ELK_", "CLK-", "XSL-", "LED LIGHT STRIP")
 
-        fun isSupported(name: String?): Boolean {
+        private fun isSupported(name: String?): Boolean {
             if (name.isNullOrBlank()) return false
             val match = NAME_PREFIXES.any { name.startsWith(it) }
             AppLog.v(TAG, "isSupported($name) = $match")
