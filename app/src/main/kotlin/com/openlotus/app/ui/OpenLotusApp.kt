@@ -78,7 +78,7 @@ fun OpenLotusApp() {
     val context = LocalContext.current
     val ble = remember { BleManager(context) }
     val scope = rememberCoroutineScope()
-    val player = remember { SequencePlayer(ble) }
+    val player = remember { SequencePlayer { frame -> ble.send(frame) } }
     var tab by rememberSaveable { mutableStateOf(0) }
 
     val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

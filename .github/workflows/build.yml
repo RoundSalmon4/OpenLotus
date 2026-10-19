@@ -33,6 +33,9 @@ jobs:
       - name: test protocol
         run: gradle :protocol:test --no-daemon
 
+      - name: test app
+        run: gradle :app:testDebugUnitTest --no-daemon
+
       - name: assemble debug
         if: ${{ inputs.variant != 'release' }}
         run: gradle :app:assembleDebug --no-daemon

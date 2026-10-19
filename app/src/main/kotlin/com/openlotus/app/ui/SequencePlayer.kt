@@ -1,10 +1,8 @@
 package com.openlotus.app.ui
 
-import android.graphics.Color as AndroidColor
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.openlotus.app.ble.BleManager
 import com.openlotus.app.log.AppLog
 import com.openlotus.protocol.Commands
 import kotlinx.coroutines.CoroutineScope
@@ -16,8 +14,11 @@ import kotlinx.coroutines.launch
 /**
  * Walks a color list and writes a static color frame every [dwellMs]. The strip
  * has no firmware sequence mode, so the alternation is driven from the phone.
+ *
+ * The frames go out through [send] so this class stays free of BLE and Android
+ * graphics, which keeps it unit testable.
  */
-class SequencePlayer(private val ble: BleManager) {
+class SequencePlayer(private val send: (ByteArray) -> Unit) {
 
     private companion object {
         const val TAG = "sequence"
@@ -50,11 +51,11 @@ class SequencePlayer(private val ble: BleManager) {
                 currentIndex = index
                 val argb = colors[index]
                 AppLog.v(TAG, "tick $index ${hex(argb)}")
-                ble.send(
+                send(
                     Commands.color(
-                        AndroidColor.red(argb),
-                        AndroidColor.green(argb),
-                        AndroidColor.blue(argb),
+                        (argb shr 16) and 0xFF,
+                        (argb shr 8) and 0xFF,
+                        argb and 0xFF,
                     )
                 )
                 delay(dwellMs)

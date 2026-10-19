@@ -26,6 +26,11 @@ android {
         checkReleaseBuilds = false
     }
 
+    testOptions {
+        // Unit tests run on the JVM, so stub the android.util.Log calls.
+        unitTests.isReturnDefaultValues = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -23,7 +23,8 @@ object AppLog {
 
     // The log lines feed a Compose list, so they must be written on the main
     // thread. BLE callbacks land on binder threads, so we post the add over.
-    private val main = Handler(Looper.getMainLooper())
+    // In plain JVM tests there is no main looper, so writes fall back to inline.
+    private val main: Handler? = Looper.getMainLooper()?.let { Handler(it) }
 
     val lines = mutableStateListOf<String>()
 
@@ -50,16 +51,20 @@ object AppLog {
 
     private fun record(level: String, tag: String, message: String) {
         val line = synchronized(lock) { "${stamp.format(Date())} $level/$tag $message" }
-        main.post {
-            lines.add(line)
-            while (lines.size > MAX_LINES) {
-                lines.removeAt(0)
-            }
+        val handler = main
+        if (handler == null) add(line) else handler.post { add(line) }
+    }
+
+    private fun add(line: String) {
+        lines.add(line)
+        while (lines.size > MAX_LINES) {
+            lines.removeAt(0)
         }
     }
 
     fun clear() {
         // Post so a clear lands after any log lines already queued up.
-        main.post { lines.clear() }
+        val handler = main
+        if (handler == null) lines.clear() else handler.post { lines.clear() }
     }
 }
