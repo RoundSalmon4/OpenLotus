@@ -6,6 +6,7 @@ private const val TAG = "sequence-json"
 private const val MASK = 0xFFFFFFL
 private const val MIN_DWELL = 100
 private const val MAX_DWELL = 3000
+private const val DEFAULT_DWELL = 800L
 
 /**
  * The saved sequence is a list of colors with a per-color hold time, stored as
@@ -38,18 +39,17 @@ private fun parseStep(token: String): Pair<Int, Int>? {
     if (token.isEmpty()) return null
     val parts = token.split(':')
     val color = parseNumber(parts.getOrNull(0)) ?: return null
-    val dwell = parseNumber(parts.getOrNull(1)) ?: 800
-    return (color and MASK.toInt()) to clampDwell(dwell)
+    val dwell = parseNumber(parts.getOrNull(1)) ?: DEFAULT_DWELL
+    return (color and MASK).toInt() to dwell.coerceIn(MIN_DWELL.toLong(), MAX_DWELL.toLong()).toInt()
 }
 
-private fun parseNumber(token: String?): Int? {
+private fun parseNumber(token: String?): Long? {
     if (token.isNullOrBlank()) return null
-    val value = if (token.startsWith("0x", ignoreCase = true)) {
+    return if (token.startsWith("0x", ignoreCase = true)) {
         token.substring(2).toLongOrNull(16)
     } else {
         token.toLongOrNull()
-    } ?: return null
-    return (value and MASK).toInt()
+    }
 }
 
 private fun clampDwell(value: Int): Int = value.coerceIn(MIN_DWELL, MAX_DWELL)
