@@ -1,6 +1,5 @@
 package com.openlotus.app.ui
 
-import com.openlotus.app.log.AppLog
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

@@ -1,34 +1,42 @@
 package com.openlotus.app.ui
 
-import org.json.JSONArray
 import com.openlotus.app.log.AppLog
 
 private const val TAG = "sequence-json"
+private const val MASK = 0xFFFFFFL
 
+/**
+ * The saved sequence is just a list of 24 bit colors, so it is stored as a plain
+ * array of numbers like `[16711680,65280]`. This is valid JSON and stays easy to
+ * read, but it is parsed by hand on purpose: the framework org.json classes are
+ * stubs in JVM unit tests, so we cannot rely on them here.
+ */
 fun sequenceToJson(colors: List<Int>): String = try {
-    JSONArray().apply {
-        colors.forEach { put(it and 0xFFFFFF) }
-    }.toString()
+    colors.joinToString(prefix = "[", postfix = "]", separator = ",") { (it.toLong() and MASK).toString() }
 } catch (e: Exception) {
     AppLog.e(TAG, "sequenceToJson failed", e)
     "[]"
 }
 
 fun jsonToSequence(json: String): List<Int> = try {
-    if (json.isBlank()) return emptyList()
-    val array = JSONArray(json)
-    buildList(array.length()) {
-        for (i in 0 until array.length()) {
-            val raw = array.opt(i)
-            val v = when (raw) {
-                is Number -> raw.toLong()
-                is String -> raw.trim().lowercase().removePrefix("0x").toLongOrNull(16) ?: raw.toLongOrNull() ?: 0L
-                else -> 0L
-            }
-            add((v.toLong() and 0xFFFFFFL).toInt())
-        }
+    val body = json.trim().removePrefix("[").removeSuffix("]")
+    if (body.isBlank()) {
+        emptyList()
+    } else {
+        body.split(',')
+            .mapNotNull { parseColor(it.trim()) }
     }
 } catch (e: Exception) {
     AppLog.e(TAG, "jsonToSequence failed", e)
     emptyList()
+}
+
+private fun parseColor(token: String): Int? {
+    if (token.isEmpty()) return null
+    val value = if (token.startsWith("0x", ignoreCase = true)) {
+        token.substring(2).toLongOrNull(16)
+    } else {
+        token.toLongOrNull()
+    } ?: return null
+    return (value and MASK).toInt()
 }
