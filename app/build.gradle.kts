@@ -6,10 +6,10 @@ plugins {
 
 apply(from = rootProject.file("gradle/version.gradle.kts"))
 
-val appVersionMajor: Int by extra
-val appVersionMinor: Int by extra
-val appVersionPatch: Int by extra
-val appVersionCode: Int by extra
+val appVersionMajor = extra["appVersionMajor"] as Int
+val appVersionMinor = extra["appVersionMinor"] as Int
+val appVersionPatch = extra["appVersionPatch"] as Int
+val appVersionCode = extra["appVersionCode"] as Int
 val versionOverride = providers.gradleProperty("versionOverride").orNull
 val appVersionName = versionOverride ?: "$appVersionMajor.$appVersionMinor.$appVersionPatch"
 
