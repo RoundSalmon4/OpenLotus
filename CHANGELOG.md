@@ -17,3 +17,4 @@
 - each color in a sequence can hold for its own time
 - a single power toggle that remembers its state
 - a launcher icon, and a banner to fix a denied bluetooth permission
+- remembers the last strip and reconnects to it, including after a dropped link

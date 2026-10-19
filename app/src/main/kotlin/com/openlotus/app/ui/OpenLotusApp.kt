@@ -122,6 +122,24 @@ fun OpenLotusApp() {
         }
     }
 
+    val connectedDevice = ble.connectedDevice
+    LaunchedEffect(connectedDevice) {
+        if (connectedDevice != null) {
+            AppLog.d(TAG, "remembering last device ${connectedDevice.address}")
+            store.setLastDevice(connectedDevice.address, connectedDevice.name)
+        }
+    }
+
+    LaunchedEffect(permissionsGranted) {
+        if (!permissionsGranted) return@LaunchedEffect
+        if (ble.connectedDevice != null) return@LaunchedEffect
+        val saved = store.settingsFlow.first()
+        if (saved.lastDeviceAddress.isNotBlank()) {
+            AppLog.d(TAG, "auto connecting to saved ${saved.lastDeviceAddress}")
+            ble.connect(BleDevice(saved.lastDeviceName, saved.lastDeviceAddress))
+        }
+    }
+
     DisposableEffect(Unit) {
         AppLog.d(TAG, "app composed")
         onDispose {

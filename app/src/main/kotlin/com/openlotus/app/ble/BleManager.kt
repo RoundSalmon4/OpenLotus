@@ -41,6 +41,9 @@ class BleManager(private val context: Context) {
 
         private val NAME_PREFIXES = listOf("ELK-", "ELK~", "ELK_", "CLK-", "XSL-", "LED LIGHT STRIP")
 
+        private const val MAX_RECONNECT_ATTEMPTS = 5
+        private const val RECONNECT_DELAY_MS = 2000L
+
         private fun isSupported(name: String?): Boolean {
             if (name.isNullOrBlank()) return false
             val match = NAME_PREFIXES.any { name.startsWith(it) }
@@ -59,6 +62,12 @@ class BleManager(private val context: Context) {
 
     private var gatt: BluetoothGatt? = null
     private var writeCharacteristic: BluetoothGattCharacteristic? = null
+
+    // Reconnect bookkeeping. lastDevice is the address we try to return to after
+    // a drop. manualDisconnect suppresses reconnect when the user asked to stop.
+    private var lastDevice: BleDevice? = null
+    private var manualDisconnect = false
+    private var reconnectAttempts = 0
 
     // GATT callbacks arrive on binder threads, so state changes are posted to
     // the main thread before they touch Compose state.
@@ -147,6 +156,13 @@ class BleManager(private val context: Context) {
         AppLog.d(TAG, "connect(${device.name} ${device.address})")
         stopScan()
         disconnect()
+        manualDisconnect = false
+        lastDevice = device
+        reconnectAttempts = 0
+        openGatt(device)
+    }
+
+    private fun openGatt(device: BleDevice) {
         val adapter = adapter() ?: return
         try {
             val remote: BluetoothDevice = adapter.getRemoteDevice(device.address)
@@ -168,6 +184,8 @@ class BleManager(private val context: Context) {
 
     fun disconnect() {
         AppLog.d(TAG, "disconnect()")
+        manualDisconnect = true
+        main.removeCallbacks(reconnectRunnable)
         val current = gatt
         gatt = null
         writeCharacteristic = null
@@ -181,6 +199,30 @@ class BleManager(private val context: Context) {
             }
         }
         if (status != "Idle") updateStatus("Disconnected")
+    }
+
+    private val reconnectRunnable = Runnable { attemptReconnect() }
+
+    private fun scheduleReconnect() {
+        val device = lastDevice
+        if (manualDisconnect || device == null) return
+        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            AppLog.d(TAG, "giving up on ${device.address}")
+            updateStatus("Disconnected, gave up")
+            return
+        }
+        reconnectAttempts++
+        AppLog.d(TAG, "reconnect $reconnectAttempts/$MAX_RECONNECT_ATTEMPTS in ${RECONNECT_DELAY_MS}ms")
+        updateStatus("Reconnecting ($reconnectAttempts/$MAX_RECONNECT_ATTEMPTS)")
+        main.removeCallbacks(reconnectRunnable)
+        main.postDelayed(reconnectRunnable, RECONNECT_DELAY_MS)
+    }
+
+    private fun attemptReconnect() {
+        if (manualDisconnect) return
+        val device = lastDevice ?: return
+        AppLog.d(TAG, "reconnecting to ${device.address}")
+        openGatt(device)
     }
 
     @Suppress("DEPRECATION")
@@ -224,6 +266,7 @@ class BleManager(private val context: Context) {
                     BleDevice("", gatt.device.address)
                 }
                 post { connectedDevice = device }
+                reconnectAttempts = 0
                 updateStatus("Discovering services")
                 try {
                     if (!gatt.discoverServices()) {
@@ -237,7 +280,6 @@ class BleManager(private val context: Context) {
                 AppLog.d(TAG, "disconnected from ${gatt.device.address}")
                 writeCharacteristic = null
                 post { connectedDevice = null }
-                updateStatus("Disconnected")
                 try {
                     gatt.close()
                 } catch (e: SecurityException) {
@@ -245,6 +287,11 @@ class BleManager(private val context: Context) {
                 }
                 if (this@BleManager.gatt === gatt) {
                     this@BleManager.gatt = null
+                }
+                if (manualDisconnect) {
+                    updateStatus("Disconnected")
+                } else {
+                    scheduleReconnect()
                 }
             }
         }

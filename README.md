@@ -13,6 +13,7 @@ app is closed source and does not let you cycle a set of colors the way I wanted
 - color sequence player: pick a few presets, give each color its own hold time,
   and the app alternates them for you, showing which color is up
 - remembers your settings and sequence between launches
+- remembers the last strip and reconnects to it, including after a dropped link
 - clock sync for the strip's timer feature
 - a log tab that shows what the app sent, so you can troubleshoot without a cable
 
