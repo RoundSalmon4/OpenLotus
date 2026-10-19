@@ -1,8 +1,12 @@
 ﻿package com.openlotus.app.ui
 
 import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -54,6 +58,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.openlotus.app.ble.BleDevice
 import com.openlotus.app.ble.BleManager
 import com.openlotus.app.data.SettingsStore
@@ -89,19 +96,30 @@ fun OpenLotusApp() {
     val player = remember { SequencePlayer { frame -> ble.send(frame) } }
     var tab by rememberSaveable { mutableStateOf(0) }
 
-    val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-    } else {
-        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    val permissions = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
     }
+    var permissionsGranted by remember { mutableStateOf(hasAllPermissions(context, permissions)) }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         AppLog.d("permissions", "result $result")
+        permissionsGranted = hasAllPermissions(context, permissions)
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        permissionsGranted = hasAllPermissions(context, permissions)
     }
     LaunchedEffect(Unit) {
-        AppLog.d(TAG, "requesting permissions ${permissions.toList()}")
-        launcher.launch(permissions)
+        if (!permissionsGranted) {
+            AppLog.d(TAG, "requesting permissions ${permissions.toList()}")
+            launcher.launch(permissions)
+        } else {
+            AppLog.d(TAG, "permissions already held")
+        }
     }
 
     DisposableEffect(Unit) {
@@ -115,6 +133,18 @@ fun OpenLotusApp() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        if (!permissionsGranted) {
+            PermissionBanner(
+                onRequest = {
+                    AppLog.d(TAG, "request permissions pressed")
+                    launcher.launch(permissions)
+                },
+                onSettings = {
+                    AppLog.d(TAG, "open app settings pressed")
+                    openAppSettings(context)
+                },
+            )
+        }
         TabRow(selectedTabIndex = tab) {
             Tab(
                 selected = tab == 0,
@@ -509,6 +539,44 @@ private fun LabeledSlider(
             enabled = enabled,
         )
     }
+}
+
+@Composable
+private fun PermissionBanner(onRequest: () -> Unit, onSettings: () -> Unit) {
+    AppLog.v(TAG, "PermissionBanner()")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(12.dp),
+    ) {
+        Text(
+            "Bluetooth permission is needed to find and control the strip.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onRequest) { Text("Grant") }
+            OutlinedButton(onClick = onSettings) { Text("App settings") }
+        }
+    }
+}
+
+private fun hasAllPermissions(context: android.content.Context, permissions: Array<String>): Boolean {
+    val granted = permissions.all {
+        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+    }
+    AppLog.v(TAG, "hasAllPermissions = $granted")
+    return granted
+}
+
+private fun openAppSettings(context: android.content.Context) {
+    AppLog.d(TAG, "opening app settings")
+    val intent = Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.fromParts("package", context.packageName, null),
+    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(intent)
 }
 
 private fun modeLabel(mode: Mode): String =
