@@ -414,6 +414,25 @@ private fun ControlScreen(
                 )
             }
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                val argb = AndroidColor.rgb(red, green, blue)
+                AppLog.d(TAG, "sequence add current ${hex(argb)}")
+                sequence.add(SequenceStep(argb, defaultDwell.toLong()))
+                selected = sequence.lastIndex
+                persistSequence()
+            }) {
+                Text("Add current color")
+            }
+            OutlinedButton(onClick = {
+                AppLog.d(TAG, "sequence add off")
+                sequence.add(SequenceStep(0x000000, defaultDwell.toLong()))
+                selected = sequence.lastIndex
+                persistSequence()
+            }) {
+                Text("Add off")
+            }
+        }
         val nowPlaying = if (player.playing) sequence.getOrNull(player.currentIndex)?.color else null
         Text(
             if (nowPlaying != null) {
@@ -464,6 +483,19 @@ private fun ControlScreen(
             },
             style = MaterialTheme.typography.bodySmall,
         )
+        OutlinedButton(
+            onClick = {
+                if (selected in sequence.indices) {
+                    val argb = AndroidColor.rgb(red, green, blue)
+                    AppLog.d(TAG, "sequence recolor $selected ${hex(argb)}")
+                    sequence[selected] = sequence[selected].copy(color = argb)
+                    persistSequence()
+                }
+            },
+            enabled = selected in sequence.indices,
+        ) {
+            Text("Recolor selected with current RGB")
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = {
