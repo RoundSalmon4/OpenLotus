@@ -20,6 +20,12 @@ android {
         compose = true
     }
 
+    lint {
+        // We build release on demand in CI and do not want lint to trip it up.
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

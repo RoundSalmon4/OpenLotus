@@ -13,6 +13,7 @@ app is closed source and does not let you cycle a set of colors the way I wanted
 - color sequence player: pick a few presets, set the hold time, and the app
   alternates them for you
 - clock sync for the strip's timer feature
+- a log tab that shows what the app sent, so you can troubleshoot without a cable
 
 No internet permission. The app talks to the strip and nothing else.
 
@@ -27,8 +28,9 @@ order (pin sequence), and the encrypted ELK-* variant.
 
 ## Build
 
-CI builds on every push. Release artifacts are the debug APK from the workflow
-run.
+CI builds on every push, and the debug APK is the artifact from the workflow run.
+You can also run the build workflow by hand and pick debug or release. The release
+APK is unsigned, so sign it yourself before installing.
 
 Locally you need JDK 17 and the Android SDK:
 

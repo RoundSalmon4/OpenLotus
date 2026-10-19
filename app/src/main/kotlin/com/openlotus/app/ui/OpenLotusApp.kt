@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -47,14 +48,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.openlotus.app.ble.BleDevice
 import com.openlotus.app.ble.BleManager
+import com.openlotus.app.log.AppLog
 import com.openlotus.protocol.Commands
 import com.openlotus.protocol.LightMode
 import com.openlotus.protocol.Mode
 import java.util.Calendar
+
+private const val TAG = "ui"
 
 private val presets = listOf(
     "Red" to AndroidColor.rgb(255, 0, 0),
@@ -69,6 +74,7 @@ private val presets = listOf(
 
 @Composable
 fun OpenLotusApp() {
+    AppLog.v(TAG, "OpenLotusApp()")
     val context = LocalContext.current
     val ble = remember { BleManager(context) }
     val scope = rememberCoroutineScope()
@@ -82,11 +88,18 @@ fun OpenLotusApp() {
     }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { }
-    LaunchedEffect(Unit) { launcher.launch(permissions) }
+    ) { result ->
+        AppLog.d("permissions", "result $result")
+    }
+    LaunchedEffect(Unit) {
+        AppLog.d(TAG, "requesting permissions ${permissions.toList()}")
+        launcher.launch(permissions)
+    }
 
     DisposableEffect(Unit) {
+        AppLog.d(TAG, "app composed")
         onDispose {
+            AppLog.d(TAG, "app disposed, stopping everything")
             player.stop()
             ble.stopScan()
             ble.disconnect()
@@ -95,26 +108,41 @@ fun OpenLotusApp() {
 
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(selectedTabIndex = tab) {
-            Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Devices") })
-            Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Control") })
+            Tab(
+                selected = tab == 0,
+                onClick = { AppLog.d(TAG, "tab devices"); tab = 0 },
+                text = { Text("Devices") },
+            )
+            Tab(
+                selected = tab == 1,
+                onClick = { AppLog.d(TAG, "tab control"); tab = 1 },
+                text = { Text("Control") },
+            )
+            Tab(
+                selected = tab == 2,
+                onClick = { AppLog.d(TAG, "tab log"); tab = 2 },
+                text = { Text("Log") },
+            )
         }
         when (tab) {
             0 -> DeviceScreen(ble)
-            else -> ControlScreen(ble, player, scope)
+            1 -> ControlScreen(ble, player, scope)
+            else -> LogScreen()
         }
     }
 }
 
 @Composable
 private fun DeviceScreen(ble: BleManager) {
+    AppLog.v(TAG, "DeviceScreen()")
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Status: ${ble.status}", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { ble.startScan() }) { Text("Scan") }
-            OutlinedButton(onClick = { ble.stopScan() }) { Text("Stop") }
+            Button(onClick = { AppLog.d(TAG, "scan pressed"); ble.startScan() }) { Text("Scan") }
+            OutlinedButton(onClick = { AppLog.d(TAG, "stop scan pressed"); ble.stopScan() }) { Text("Stop") }
             OutlinedButton(
-                onClick = { ble.disconnect() },
+                onClick = { AppLog.d(TAG, "disconnect pressed"); ble.disconnect() },
                 enabled = ble.connectedDevice != null,
             ) { Text("Disconnect") }
         }
@@ -130,6 +158,7 @@ private fun DeviceScreen(ble: BleManager) {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(ble.devices, key = { it.address }) { device ->
                     DeviceRow(device, ble.connectedDevice?.address == device.address) {
+                        AppLog.d(TAG, "connect pressed for ${device.address}")
                         ble.connect(device)
                     }
                 }
@@ -140,6 +169,7 @@ private fun DeviceScreen(ble: BleManager) {
 
 @Composable
 private fun DeviceRow(device: BleDevice, connected: Boolean, onClick: () -> Unit) {
+    AppLog.v(TAG, "DeviceRow(${device.address}, connected=$connected)")
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -158,6 +188,7 @@ private fun DeviceRow(device: BleDevice, connected: Boolean, onClick: () -> Unit
 
 @Composable
 private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlinx.coroutines.CoroutineScope) {
+    AppLog.v(TAG, "ControlScreen()")
     val connected = ble.connectedDevice != null
     var brightness by rememberSaveable { mutableStateOf(60) }
     var speed by rememberSaveable { mutableStateOf(50) }
@@ -180,11 +211,11 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                onClick = { ble.send(Commands.power(true)) },
+                onClick = { AppLog.d(TAG, "power on pressed"); ble.send(Commands.power(true)) },
                 enabled = connected,
             ) { Text("On") }
             OutlinedButton(
-                onClick = { ble.send(Commands.power(false)) },
+                onClick = { AppLog.d(TAG, "power off pressed"); ble.send(Commands.power(false)) },
                 enabled = connected,
             ) { Text("Off") }
         }
@@ -196,6 +227,7 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
             enabled = connected,
             onChange = { brightness = it.toInt() },
             onFinished = {
+                AppLog.d(TAG, "brightness $brightness")
                 ble.send(Commands.brightness(brightness, LightMode.ALL))
             },
         )
@@ -206,7 +238,10 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
             range = 0f..100f,
             enabled = connected,
             onChange = { speed = it.toInt() },
-            onFinished = { ble.send(Commands.speed(speed)) },
+            onFinished = {
+                AppLog.d(TAG, "speed $speed")
+                ble.send(Commands.speed(speed))
+            },
         )
 
         HorizontalDivider()
@@ -220,12 +255,15 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
                 .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
         )
         LabeledSlider("Red $red", red.toFloat(), 0f..255f, connected, { red = it.toInt() }, {
+            AppLog.d(TAG, "color $red,$green,$blue")
             ble.send(Commands.color(red, green, blue))
         })
         LabeledSlider("Green $green", green.toFloat(), 0f..255f, connected, { green = it.toInt() }, {
+            AppLog.d(TAG, "color $red,$green,$blue")
             ble.send(Commands.color(red, green, blue))
         })
         LabeledSlider("Blue $blue", blue.toFloat(), 0f..255f, connected, { blue = it.toInt() }, {
+            AppLog.d(TAG, "color $red,$green,$blue")
             ble.send(Commands.color(red, green, blue))
         })
 
@@ -235,7 +273,10 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                 row.forEach { mode ->
                     OutlinedButton(
-                        onClick = { ble.send(Commands.mode(mode)) },
+                        onClick = {
+                            AppLog.d(TAG, "mode ${mode.name} (0x%02X)".format(mode.code))
+                            ble.send(Commands.mode(mode))
+                        },
                         enabled = connected,
                         modifier = Modifier.weight(1f).height(44.dp),
                     ) {
@@ -259,7 +300,10 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
                         .clip(CircleShape)
                         .background(Color(argb))
                         .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                        .clickable { sequence.add(argb) },
+                        .clickable {
+                            AppLog.d(TAG, "sequence add $name")
+                            sequence.add(argb)
+                        },
                 )
             }
         }
@@ -268,10 +312,17 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
             style = MaterialTheme.typography.bodySmall,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { if (sequence.isNotEmpty()) sequence.removeAt(sequence.lastIndex) }) {
+            OutlinedButton(onClick = {
+                AppLog.d(TAG, "sequence remove last")
+                if (sequence.isNotEmpty()) sequence.removeAt(sequence.lastIndex)
+            }) {
                 Text("Remove last")
             }
-            OutlinedButton(onClick = { sequence.clear(); player.stop() }) {
+            OutlinedButton(onClick = {
+                AppLog.d(TAG, "sequence clear")
+                sequence.clear()
+                player.stop()
+            }) {
                 Text("Clear")
             }
         }
@@ -282,13 +333,18 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
             enabled = connected,
             onChange = { dwell = it.toInt() },
             onFinished = {
+                AppLog.d(TAG, "dwell $dwell")
                 if (player.playing) {
+                    AppLog.d(TAG, "restart sequence with new dwell")
                     player.start(scope, sequence.toList(), dwell.toLong())
                 }
             },
         )
         Button(
-            onClick = { player.toggle(scope, sequence.toList(), dwell.toLong()) },
+            onClick = {
+                AppLog.d(TAG, "sequence button, playing=${player.playing}, colors=${sequence.size}")
+                player.toggle(scope, sequence.toList(), dwell.toLong())
+            },
             enabled = connected && sequence.isNotEmpty(),
         ) {
             Text(if (player.playing) "Stop sequence" else "Start sequence")
@@ -298,6 +354,7 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
         OutlinedButton(
             onClick = {
                 val now = Calendar.getInstance()
+                AppLog.d(TAG, "sync clock pressed")
                 ble.send(
                     Commands.systemTime(
                         now.get(Calendar.HOUR_OF_DAY),
@@ -315,6 +372,37 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
 }
 
 @Composable
+private fun LogScreen() {
+    AppLog.v(TAG, "LogScreen()")
+    val listState = rememberLazyListState()
+    val count = AppLog.lines.size
+    LaunchedEffect(count) {
+        if (count > 0) {
+            listState.scrollToItem(count - 1)
+        }
+    }
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = {
+                AppLog.d(TAG, "log cleared")
+                AppLog.clear()
+            }) { Text("Clear") }
+            Text("$count lines kept, logcat has everything", style = MaterialTheme.typography.bodySmall)
+        }
+        Spacer(Modifier.height(8.dp))
+        LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth()) {
+            items(AppLog.lines) { line ->
+                Text(
+                    line,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun LabeledSlider(
     label: String,
     value: Float,
@@ -327,8 +415,14 @@ private fun LabeledSlider(
         Text(label, style = MaterialTheme.typography.bodySmall)
         Slider(
             value = value,
-            onValueChange = onChange,
-            onValueChangeFinished = onFinished,
+            onValueChange = {
+                AppLog.v(TAG, "slider $label -> $it")
+                onChange(it)
+            },
+            onValueChangeFinished = {
+                AppLog.v(TAG, "slider $label finished")
+                onFinished()
+            },
             valueRange = range,
             enabled = enabled,
         )
