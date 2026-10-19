@@ -164,7 +164,7 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
     var red by rememberSaveable { mutableStateOf(255) }
     var green by rememberSaveable { mutableStateOf(80) }
     var blue by rememberSaveable { mutableStateOf(0) }
-    var sequence by remember { mutableStateListOf<Int>() }
+    val sequence = remember { mutableStateListOf<Int>() }
     var dwell by rememberSaveable { mutableStateOf(800) }
 
     Column(
