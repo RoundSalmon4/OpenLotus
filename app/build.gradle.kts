@@ -4,6 +4,15 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+apply(from = rootProject.file("gradle/version.gradle.kts"))
+
+val appVersionMajor: Int by extra
+val appVersionMinor: Int by extra
+val appVersionPatch: Int by extra
+val appVersionCode: Int by extra
+val versionOverride = providers.gradleProperty("versionOverride").orNull
+val appVersionName = versionOverride ?: "$appVersionMajor.$appVersionMinor.$appVersionPatch"
+
 android {
     namespace = "com.openlotus.app"
     compileSdk = 37
@@ -12,8 +21,8 @@ android {
         applicationId = "com.openlotus.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
 
     buildFeatures {
@@ -29,6 +38,26 @@ android {
     testOptions {
         // Unit tests run on the JVM, so stub the android.util.Log calls.
         unitTests.isReturnDefaultValues = true
+    }
+
+    val releaseStore = System.getenv("RELEASE_KEYSTORE_PATH")
+    signingConfigs {
+        if (!releaseStore.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(releaseStore)
+                storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (!releaseStore.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
     }
 
     compileOptions {

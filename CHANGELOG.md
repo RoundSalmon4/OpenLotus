@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.1.0
+Dates are based on UTC.
+
+## v0.1.0 (2026-10-19)
 
 - first cut
 - gradle project, protocol module with frame tests, CI build
@@ -18,3 +20,5 @@
 - a single power toggle that remembers its state
 - a launcher icon, and a banner to fix a denied bluetooth permission
 - remembers the last strip and reconnects to it, including after a dropped link
+- the sequence takes any color from the RGB sliders, plus off steps, so an
+  orange and black alternation is just two steps

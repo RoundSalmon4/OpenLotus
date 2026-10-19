@@ -10,8 +10,8 @@ app is closed source and does not let you cycle a set of colors the way I wanted
 - brightness and effect speed
 - RGB sliders with a live preview
 - the 29 built in lighting modes
-- color sequence player: pick a few presets, give each color its own hold time,
-  and the app alternates them for you, showing which color is up
+- color sequence player: add presets, the current RGB color, or off, give each
+  step its own hold time, and the app alternates them for you
 - remembers your settings and sequence between launches
 - remembers the last strip and reconnects to it, including after a dropped link
 - clock sync for the strip's timer feature
@@ -33,8 +33,11 @@ them.
 ## Build
 
 CI builds on every push, and the debug APK is the artifact from the workflow run.
-You can also run the build workflow by hand and pick debug or release. The release
-APK is unsigned, so sign it yourself before installing.
+For a versioned build, run the release workflow by hand. `build` gives you an APK
+artifact, `publish` also tags vX.Y.Z and creates a GitHub release with the APK.
+The version lives in gradle/version.gradle.kts. If the repo has the release
+keystore secrets the APK is signed, otherwise it is unsigned and you sign it
+yourself before installing.
 
 Locally you need JDK 17 and the Android SDK:
 
