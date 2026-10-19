@@ -14,3 +14,6 @@
   which color is playing
 - protocol notes record a hardware check on an ELK-BLEDDM D7: both dialects work,
   no encryption needed, no write queue needed
+- each color in a sequence can hold for its own time
+- a single power toggle that remembers its state
+- a launcher icon, and a banner to fix a denied bluetooth permission

@@ -224,9 +224,14 @@ private fun DeviceRow(device: BleDevice, connected: Boolean, onClick: () -> Unit
     }
 }
 
-private val sequenceSaver = listSaver<MutableList<Int>, Int>(
-    save = { it.toList() },
-    restore = { it.toMutableStateList() },
+private val sequenceSaver = listSaver<MutableList<SequenceStep>, Int>(
+    save = { list -> list.flatMap { listOf(it.color, it.dwellMs.toInt()) } },
+    restore = { flat ->
+        flat.chunked(2)
+            .filter { it.size == 2 }
+            .map { SequenceStep(it[0], it[1].toLong()) }
+            .toMutableStateList()
+    },
 )
 
 @Composable
@@ -243,8 +248,9 @@ private fun ControlScreen(
     var red by rememberSaveable { mutableStateOf(255) }
     var green by rememberSaveable { mutableStateOf(80) }
     var blue by rememberSaveable { mutableStateOf(0) }
-    var dwell by rememberSaveable { mutableStateOf(800) }
-    val sequence = rememberSaveable(saver = sequenceSaver) { mutableStateListOf<Int>() }
+    var defaultDwell by rememberSaveable { mutableStateOf(800) }
+    var selected by rememberSaveable { mutableStateOf(-1) }
+    val sequence = rememberSaveable(saver = sequenceSaver) { mutableStateListOf<SequenceStep>() }
     var powerOn by rememberSaveable { mutableStateOf(false) }
     var seeded by rememberSaveable { mutableStateOf(false) }
 
@@ -257,15 +263,18 @@ private fun ControlScreen(
         red = loaded.red
         green = loaded.green
         blue = loaded.blue
-        dwell = loaded.dwellMs
+        defaultDwell = loaded.dwellMs
         powerOn = loaded.powerOn
+        selected = -1
         sequence.clear()
-        sequence.addAll(jsonToSequence(loaded.sequenceJson))
+        sequence.addAll(jsonToSequence(loaded.sequenceJson).map { SequenceStep(it.first, it.second.toLong()) })
         seeded = true
     }
 
     val persistSequence: () -> Unit = {
-        scope.launch { store.setSequenceJson(sequenceToJson(sequence.toList())) }
+        scope.launch {
+            store.setSequenceJson(sequenceToJson(sequence.map { it.color to it.dwellMs.toInt() }))
+        }
     }
 
     Column(
@@ -367,7 +376,7 @@ private fun ControlScreen(
         HorizontalDivider()
         Text("Color sequence", style = MaterialTheme.typography.titleSmall)
         Text(
-            "Pick a few presets and the app alternates them on a timer.",
+            "Tap presets to add them, then tap a swatch to give it its own hold time.",
             style = MaterialTheme.typography.bodySmall,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -380,13 +389,14 @@ private fun ControlScreen(
                         .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
                         .clickable {
                             AppLog.d(TAG, "sequence add $name")
-                            sequence.add(argb)
+                            sequence.add(SequenceStep(argb, defaultDwell.toLong()))
+                            selected = sequence.lastIndex
                             persistSequence()
                         },
                 )
             }
         }
-        val nowPlaying = if (player.playing) sequence.getOrNull(player.currentIndex) else null
+        val nowPlaying = if (player.playing) sequence.getOrNull(player.currentIndex)?.color else null
         Text(
             if (nowPlaying != null) {
                 "Now playing ${hex(nowPlaying)} at step ${player.currentIndex + 1} of ${sequence.size}"
@@ -399,38 +409,61 @@ private fun ControlScreen(
             Text("No colors yet", style = MaterialTheme.typography.bodySmall)
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                sequence.forEachIndexed { index, argb ->
+                sequence.forEachIndexed { index, step ->
                     val active = player.playing && player.currentIndex == index
+                    val isSelected = selected == index
                     Box(
                         modifier = Modifier
                             .size(32.dp)
                             .clip(CircleShape)
-                            .background(Color(argb))
+                            .background(Color(step.color))
                             .border(
-                                width = if (active) 3.dp else 1.dp,
-                                color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                width = when {
+                                    active -> 3.dp
+                                    isSelected -> 2.dp
+                                    else -> 1.dp
+                                },
+                                color = when {
+                                    active -> MaterialTheme.colorScheme.primary
+                                    isSelected -> MaterialTheme.colorScheme.secondary
+                                    else -> MaterialTheme.colorScheme.outline
+                                },
                                 shape = CircleShape,
                             )
                             .clickable {
-                                AppLog.d(TAG, "sequence remove $index ${hex(argb)}")
-                                sequence.removeAt(index)
-                                persistSequence()
+                                AppLog.d(TAG, "sequence select $index ${hex(step.color)}")
+                                selected = index
                             },
                     )
                 }
             }
         }
+        Text(
+            if (selected in sequence.indices) {
+                "Selected step ${selected + 1}: ${hex(sequence[selected].color)} held ${sequence[selected].dwellMs}ms"
+            } else {
+                "No step selected"
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = {
-                AppLog.d(TAG, "sequence remove last")
-                if (sequence.isNotEmpty()) sequence.removeAt(sequence.lastIndex)
-                persistSequence()
-            }) {
-                Text("Remove last")
+            OutlinedButton(
+                onClick = {
+                    if (selected in sequence.indices) {
+                        AppLog.d(TAG, "sequence remove selected $selected")
+                        sequence.removeAt(selected)
+                        selected = -1
+                        persistSequence()
+                    }
+                },
+                enabled = selected in sequence.indices,
+            ) {
+                Text("Remove selected")
             }
             OutlinedButton(onClick = {
                 AppLog.d(TAG, "sequence clear")
                 sequence.clear()
+                selected = -1
                 player.stop()
                 persistSequence()
             }) {
@@ -438,24 +471,40 @@ private fun ControlScreen(
             }
         }
         LabeledSlider(
-            label = "Hold each color ${dwell}ms",
-            value = dwell.toFloat(),
+            label = if (selected in sequence.indices) {
+                "Hold selected color ${sequence[selected].dwellMs}ms"
+            } else {
+                "Hold for new colors ${defaultDwell}ms"
+            },
+            value = (if (selected in sequence.indices) sequence[selected].dwellMs else defaultDwell.toLong()).toFloat(),
             range = 100f..3000f,
-            enabled = connected,
-            onChange = { dwell = it.toInt() },
+            enabled = true,
+            onChange = { value ->
+                val v = value.toInt()
+                if (selected in sequence.indices) {
+                    sequence[selected] = sequence[selected].copy(dwellMs = v.toLong())
+                } else {
+                    defaultDwell = v
+                }
+            },
             onFinished = {
-                AppLog.d(TAG, "dwell $dwell")
-                scope.launch { store.setDwell(dwell) }
+                if (selected in sequence.indices) {
+                    AppLog.d(TAG, "step $selected dwell ${sequence[selected].dwellMs}")
+                } else {
+                    AppLog.d(TAG, "default dwell $defaultDwell")
+                    scope.launch { store.setDwell(defaultDwell) }
+                }
+                persistSequence()
                 if (player.playing) {
-                    AppLog.d(TAG, "restart sequence with new dwell from step ${player.currentIndex}")
-                    player.start(scope, sequence.toList(), dwell.toLong(), player.currentIndex)
+                    AppLog.d(TAG, "restart sequence from step ${player.currentIndex}")
+                    player.start(scope, sequence.toList(), player.currentIndex)
                 }
             },
         )
         Button(
             onClick = {
-                AppLog.d(TAG, "sequence button, playing=${player.playing}, colors=${sequence.size}")
-                player.toggle(scope, sequence.toList(), dwell.toLong())
+                AppLog.d(TAG, "sequence button, playing=${player.playing}, steps=${sequence.size}")
+                player.toggle(scope, sequence.toList(), 0)
             },
             enabled = connected && sequence.isNotEmpty(),
         ) {

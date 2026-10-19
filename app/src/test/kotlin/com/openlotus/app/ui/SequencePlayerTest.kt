@@ -15,13 +15,17 @@ class SequencePlayerTest {
     private fun rgb(frame: ByteArray): Triple<Int, Int, Int> =
         Triple(frame[4].toInt() and 0xFF, frame[5].toInt() and 0xFF, frame[6].toInt() and 0xFF)
 
+    private val red = SequenceStep(0xFF0000, 20)
+    private val green = SequenceStep(0x00FF00, 20)
+    private val blue = SequenceStep(0x0000FF, 20)
+
     @Test
-    fun playsColorsInOrderThenWraps() = runBlocking {
+    fun playsStepsInOrderThenWraps() = runBlocking {
         val sent = Collections.synchronizedList(mutableListOf<ByteArray>())
         val player = SequencePlayer { sent.add(it) }
         val scope = CoroutineScope(Dispatchers.Default)
         try {
-            player.start(scope, listOf(0xFF0000, 0x00FF00, 0x0000FF), 20)
+            player.start(scope, listOf(red, green, blue))
             withTimeout(2_000) {
                 while (sent.size < 5) delay(5)
             }
@@ -42,7 +46,7 @@ class SequencePlayerTest {
         val player = SequencePlayer { sent.add(it) }
         val scope = CoroutineScope(Dispatchers.Default)
         try {
-            player.start(scope, listOf(0xFF0000, 0x00FF00, 0x0000FF), 20, startIndex = 2)
+            player.start(scope, listOf(red, green, blue), startIndex = 2)
             withTimeout(2_000) {
                 while (sent.size < 3) delay(5)
             }
@@ -56,9 +60,9 @@ class SequencePlayerTest {
     }
 
     @Test
-    fun startWithNoColorsDoesNothing() {
+    fun startWithNoStepsDoesNothing() {
         val player = SequencePlayer { }
-        player.start(CoroutineScope(Dispatchers.Default), emptyList(), 20)
+        player.start(CoroutineScope(Dispatchers.Default), emptyList())
         assertFalse(player.playing)
         assertEquals(-1, player.currentIndex)
     }
@@ -68,7 +72,7 @@ class SequencePlayerTest {
         val sent = Collections.synchronizedList(mutableListOf<ByteArray>())
         val player = SequencePlayer { sent.add(it) }
         val scope = CoroutineScope(Dispatchers.Default)
-        player.start(scope, listOf(0xFF0000), 20)
+        player.start(scope, listOf(red))
         withTimeout(1_000) {
             while (sent.isEmpty()) delay(5)
         }
@@ -82,11 +86,11 @@ class SequencePlayerTest {
         val sent = Collections.synchronizedList(mutableListOf<ByteArray>())
         val player = SequencePlayer { sent.add(it) }
         val scope = CoroutineScope(Dispatchers.Default)
-        player.toggle(scope, listOf(0xFF0000, 0x00FF00), 20)
+        player.toggle(scope, listOf(red, green))
         withTimeout(1_000) {
             while (sent.isEmpty()) delay(5)
         }
-        player.toggle(scope, listOf(0xFF0000, 0x00FF00), 20)
+        player.toggle(scope, listOf(red, green))
         assertFalse(player.playing)
     }
 }
