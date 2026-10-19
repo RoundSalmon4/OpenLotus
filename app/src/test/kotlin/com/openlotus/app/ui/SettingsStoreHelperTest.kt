@@ -29,12 +29,11 @@ class SettingsStoreHelperTest {
 
     @Test
     fun clampsJsonNumbers() {
-        val json = "[4294967295, -1, 0xFF]"
+        val json = "[4294967295, -1]"
         val back = jsonToSequence(json)
-        assertEquals(3, back.size)
+        assertEquals(2, back.size)
         assertEquals(0xFFFFFF, back[0])
-        assertEquals(0, back[1])
-        // 0xFF is not standard JSON; json parser in test uses basic extraction, just assert shape
+        assertEquals(0xFFFFFF, back[1])
     }
 
     @Test

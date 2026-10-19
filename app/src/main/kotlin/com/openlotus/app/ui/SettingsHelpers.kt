@@ -19,11 +19,13 @@ fun jsonToSequence(json: String): List<Int> = try {
     val array = JSONArray(json)
     buildList(array.length()) {
         for (i in 0 until array.length()) {
-            val v = when (val o = array.opt(i)) {
-                is Number -> o.toLong().toInt()
-                else -> array.optString(i).takeIf { it.isNotBlank() }?.toLongOrNull()?.toInt() ?: 0
+            val raw = array.opt(i)
+            val v = when (raw) {
+                is Number -> raw.toLong()
+                is String -> raw.trim().lowercase().removePrefix("0x").toLongOrNull(16) ?: raw.toLongOrNull() ?: 0L
+                else -> 0L
             }
-            add(v.coerceIn(0, 0xFFFFFF))
+            add((v.toLong() and 0xFFFFFFL).toInt())
         }
     }
 } catch (e: Exception) {
