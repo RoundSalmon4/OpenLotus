@@ -37,6 +37,25 @@ class SequencePlayerTest {
     }
 
     @Test
+    fun startCanResumeFromAnIndex() = runBlocking {
+        val sent = Collections.synchronizedList(mutableListOf<ByteArray>())
+        val player = SequencePlayer { sent.add(it) }
+        val scope = CoroutineScope(Dispatchers.Default)
+        try {
+            player.start(scope, listOf(0xFF0000, 0x00FF00, 0x0000FF), 20, startIndex = 2)
+            withTimeout(2_000) {
+                while (sent.size < 3) delay(5)
+            }
+            player.stop()
+            assertEquals(Triple(0, 0, 255), rgb(sent[0]))
+            assertEquals(Triple(255, 0, 0), rgb(sent[1]))
+            assertEquals(Triple(0, 255, 0), rgb(sent[2]))
+        } finally {
+            player.stop()
+        }
+    }
+
+    @Test
     fun startWithNoColorsDoesNothing() {
         val player = SequencePlayer { }
         player.start(CoroutineScope(Dispatchers.Default), emptyList(), 20)

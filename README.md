@@ -11,7 +11,8 @@ app is closed source and does not let you cycle a set of colors the way I wanted
 - RGB sliders with a live preview
 - the 29 built in lighting modes
 - color sequence player: pick a few presets, set the hold time, and the app
-  alternates them for you
+  alternates them for you, showing which color is up
+- remembers your settings and sequence between launches
 - clock sync for the strip's timer feature
 - a log tab that shows what the app sent, so you can troubleshoot without a cable
 

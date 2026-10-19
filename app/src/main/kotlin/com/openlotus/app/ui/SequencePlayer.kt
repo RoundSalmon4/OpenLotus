@@ -37,16 +37,16 @@ class SequencePlayer(private val send: (ByteArray) -> Unit) {
         if (playing) stop() else start(scope, colors, dwellMs)
     }
 
-    fun start(scope: CoroutineScope, colors: List<Int>, dwellMs: Long) {
+    fun start(scope: CoroutineScope, colors: List<Int>, dwellMs: Long, startIndex: Int = 0) {
         if (colors.isEmpty()) {
             AppLog.e(TAG, "start called with no colors")
             return
         }
-        AppLog.d(TAG, "start with ${colors.size} colors, dwell ${dwellMs}ms")
+        AppLog.d(TAG, "start with ${colors.size} colors, dwell ${dwellMs}ms, from $startIndex")
         stop()
         playing = true
         job = scope.launch {
-            var index = 0
+            var index = ((startIndex % colors.size) + colors.size) % colors.size
             while (isActive) {
                 currentIndex = index
                 val argb = colors[index]

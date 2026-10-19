@@ -41,8 +41,10 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,10 +55,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.openlotus.app.ble.BleDevice
 import com.openlotus.app.ble.BleManager
+import com.openlotus.app.data.SettingsStore
 import com.openlotus.app.log.AppLog
 import com.openlotus.protocol.Commands
 import com.openlotus.protocol.LightMode
 import com.openlotus.protocol.Mode
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.util.Calendar
 
 private const val TAG = "ui"
@@ -78,6 +84,7 @@ fun OpenLotusApp() {
     val context = LocalContext.current
     val ble = remember { BleManager(context) }
     val scope = rememberCoroutineScope()
+    val store = remember { SettingsStore(context) }
     val player = remember { SequencePlayer { frame -> ble.send(frame) } }
     var tab by rememberSaveable { mutableStateOf(0) }
 
@@ -126,7 +133,7 @@ fun OpenLotusApp() {
         }
         when (tab) {
             0 -> DeviceScreen(ble)
-            1 -> ControlScreen(ble, player, scope)
+            1 -> ControlScreen(ble, player, scope, store)
             else -> LogScreen()
         }
     }
@@ -186,8 +193,18 @@ private fun DeviceRow(device: BleDevice, connected: Boolean, onClick: () -> Unit
     }
 }
 
+private val sequenceSaver = listSaver<MutableList<Int>, Int>(
+    save = { it.toList() },
+    restore = { it.toMutableStateList() },
+)
+
 @Composable
-private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlinx.coroutines.CoroutineScope) {
+private fun ControlScreen(
+    ble: BleManager,
+    player: SequencePlayer,
+    scope: CoroutineScope,
+    store: SettingsStore,
+) {
     AppLog.v(TAG, "ControlScreen()")
     val connected = ble.connectedDevice != null
     var brightness by rememberSaveable { mutableStateOf(60) }
@@ -195,8 +212,28 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
     var red by rememberSaveable { mutableStateOf(255) }
     var green by rememberSaveable { mutableStateOf(80) }
     var blue by rememberSaveable { mutableStateOf(0) }
-    val sequence = remember { mutableStateListOf<Int>() }
     var dwell by rememberSaveable { mutableStateOf(800) }
+    val sequence = rememberSaveable(saver = sequenceSaver) { mutableStateListOf<Int>() }
+    var seeded by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (seeded) return@LaunchedEffect
+        val loaded = store.settingsFlow.first()
+        AppLog.d(TAG, "seeding controls from saved settings")
+        brightness = loaded.brightness
+        speed = loaded.speed
+        red = loaded.red
+        green = loaded.green
+        blue = loaded.blue
+        dwell = loaded.dwellMs
+        sequence.clear()
+        sequence.addAll(jsonToSequence(loaded.sequenceJson))
+        seeded = true
+    }
+
+    val persistSequence: () -> Unit = {
+        scope.launch { store.setSequenceJson(sequenceToJson(sequence.toList())) }
+    }
 
     Column(
         modifier = Modifier
@@ -229,6 +266,7 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
             onFinished = {
                 AppLog.d(TAG, "brightness $brightness")
                 ble.send(Commands.brightness(brightness, LightMode.ALL))
+                scope.launch { store.setBrightness(brightness) }
             },
         )
 
@@ -241,6 +279,7 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
             onFinished = {
                 AppLog.d(TAG, "speed $speed")
                 ble.send(Commands.speed(speed))
+                scope.launch { store.setSpeed(speed) }
             },
         )
 
@@ -257,14 +296,17 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
         LabeledSlider("Red $red", red.toFloat(), 0f..255f, connected, { red = it.toInt() }, {
             AppLog.d(TAG, "color $red,$green,$blue")
             ble.send(Commands.color(red, green, blue))
+            scope.launch { store.setColor(red, green, blue) }
         })
         LabeledSlider("Green $green", green.toFloat(), 0f..255f, connected, { green = it.toInt() }, {
             AppLog.d(TAG, "color $red,$green,$blue")
             ble.send(Commands.color(red, green, blue))
+            scope.launch { store.setColor(red, green, blue) }
         })
         LabeledSlider("Blue $blue", blue.toFloat(), 0f..255f, connected, { blue = it.toInt() }, {
             AppLog.d(TAG, "color $red,$green,$blue")
             ble.send(Commands.color(red, green, blue))
+            scope.launch { store.setColor(red, green, blue) }
         })
 
         HorizontalDivider()
@@ -303,18 +345,50 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
                         .clickable {
                             AppLog.d(TAG, "sequence add $name")
                             sequence.add(argb)
+                            persistSequence()
                         },
                 )
             }
         }
+        val nowPlaying = if (player.playing) sequence.getOrNull(player.currentIndex) else null
         Text(
-            sequence.mapIndexed { index, argb -> "$index:${hex(argb)}" }.joinToString("  ").ifEmpty { "No colors yet" },
+            if (nowPlaying != null) {
+                "Now playing ${hex(nowPlaying)} at step ${player.currentIndex + 1} of ${sequence.size}"
+            } else {
+                "Not playing"
+            },
             style = MaterialTheme.typography.bodySmall,
         )
+        if (sequence.isEmpty()) {
+            Text("No colors yet", style = MaterialTheme.typography.bodySmall)
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                sequence.forEachIndexed { index, argb ->
+                    val active = player.playing && player.currentIndex == index
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color(argb))
+                            .border(
+                                width = if (active) 3.dp else 1.dp,
+                                color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                shape = CircleShape,
+                            )
+                            .clickable {
+                                AppLog.d(TAG, "sequence remove $index ${hex(argb)}")
+                                sequence.removeAt(index)
+                                persistSequence()
+                            },
+                    )
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
                 AppLog.d(TAG, "sequence remove last")
                 if (sequence.isNotEmpty()) sequence.removeAt(sequence.lastIndex)
+                persistSequence()
             }) {
                 Text("Remove last")
             }
@@ -322,6 +396,7 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
                 AppLog.d(TAG, "sequence clear")
                 sequence.clear()
                 player.stop()
+                persistSequence()
             }) {
                 Text("Clear")
             }
@@ -334,9 +409,10 @@ private fun ControlScreen(ble: BleManager, player: SequencePlayer, scope: kotlin
             onChange = { dwell = it.toInt() },
             onFinished = {
                 AppLog.d(TAG, "dwell $dwell")
+                scope.launch { store.setDwell(dwell) }
                 if (player.playing) {
-                    AppLog.d(TAG, "restart sequence with new dwell")
-                    player.start(scope, sequence.toList(), dwell.toLong())
+                    AppLog.d(TAG, "restart sequence with new dwell from step ${player.currentIndex}")
+                    player.start(scope, sequence.toList(), dwell.toLong(), player.currentIndex)
                 }
             },
         )

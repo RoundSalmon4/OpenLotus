@@ -10,3 +10,5 @@
 - ci can also build a release apk on demand (unsigned, needs your own keystore)
 - unit tests for the sequence player, run in ci
 - dropped a little dead code and marked the parts that wait on hardware testing
+- settings and the color sequence persist between launches, and the sequence shows
+  which color is playing
