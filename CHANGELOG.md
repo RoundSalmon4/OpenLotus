@@ -12,3 +12,5 @@
 - dropped a little dead code and marked the parts that wait on hardware testing
 - settings and the color sequence persist between launches, and the sequence shows
   which color is playing
+- protocol notes record a hardware check on an ELK-BLEDDM D7: both dialects work,
+  no encryption needed, no write queue needed

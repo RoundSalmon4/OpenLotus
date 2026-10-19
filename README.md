@@ -20,12 +20,14 @@ No internet permission. The app talks to the strip and nothing else.
 
 ## Status
 
-Early. The frames were worked out from the stock app and the public ELK-BLEDOM
-write ups. Two dialects exist in the wild, so if something looks ignored on your
-strip check docs/PROTOCOL.md and try the legacy frames.
+Early, but the main frames are now checked on real hardware. On an ELK-BLEDDM D7
+the stock dialect worked for power, color, brightness, modes and speed, and the
+legacy dialect worked too, so both are in. Plaintext frames were enough, no
+encryption needed. Details in docs/PROTOCOL.md.
 
-Not wired into the UI yet: schedules, mic/music mode, laser controls, channel
-order (pin sequence), and the encrypted ELK-* variant.
+Not wired into the UI yet: schedules, mic/music mode, laser controls and channel
+order (pin sequence). These have frames but no confirmed hardware test behind
+them.
 
 ## Build
 

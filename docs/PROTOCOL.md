@@ -3,6 +3,20 @@
 Everything here was checked against the stock app and the public ELK-BLEDOM
 write ups. Values are raw bytes.
 
+## Hardware check
+
+Tested against an ELK-BLEDDM D7 on 2026-10-19. The stock dialect worked for
+power, color, brightness, modes and speed. The legacy dialect also worked for
+power and color, so this strip accepts both. Frames went out as plaintext 9 byte
+frames and the encrypted path was not needed. The strip exposes a read and
+notify characteristic at `0000fff4` that sends `12 13 14` on connect and then
+stays quiet. Color temperature, pin order, mic and schedule are not confirmed
+yet.
+
+Rapid writes were steady: 250 color frames at a 20ms target were all accepted,
+with the stack throttling to about 28ms per frame. The app dwell range is 100 to
+3000ms, so no write queue is needed.
+
 ## GATT
 
 - service `0000fff0-0000-1000-8000-00805f9b34fb`
@@ -63,8 +77,8 @@ The community write ups use `0x00` in byte 1 instead of the values above:
 - mode `7E 00 03 <code> 03 00 00 00 EF`
 - speed `7E 00 02 <0-100> 00 00 00 00 EF`
 
-The protocol module keeps both sets. Which one a strip accepts needs a quick
-test on real hardware.
+The protocol module keeps both sets. The tested strip accepted both, so the
+stock set is the default and the legacy set stays as a fallback for other units.
 
 ## Sequences
 
@@ -76,4 +90,5 @@ does the same: a static color frame is written every dwell interval.
 
 The stock app has a second path for devices whose advertised name contains
 `ELK-*`. Frames go out as a 21 byte encrypted packet and only some commands are
-encrypted. Not implemented here yet.
+encrypted. Not implemented here yet. The tested strip did not need it, plaintext
+frames were accepted.
