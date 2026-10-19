@@ -30,6 +30,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -214,6 +215,7 @@ private fun ControlScreen(
     var blue by rememberSaveable { mutableStateOf(0) }
     var dwell by rememberSaveable { mutableStateOf(800) }
     val sequence = rememberSaveable(saver = sequenceSaver) { mutableStateListOf<Int>() }
+    var powerOn by rememberSaveable { mutableStateOf(false) }
     var seeded by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -226,6 +228,7 @@ private fun ControlScreen(
         green = loaded.green
         blue = loaded.blue
         dwell = loaded.dwellMs
+        powerOn = loaded.powerOn
         sequence.clear()
         sequence.addAll(jsonToSequence(loaded.sequenceJson))
         seeded = true
@@ -246,15 +249,18 @@ private fun ControlScreen(
             Text("Connect to a strip first.", style = MaterialTheme.typography.bodyMedium)
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = { AppLog.d(TAG, "power on pressed"); ble.send(Commands.power(true)) },
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Power", style = MaterialTheme.typography.bodyMedium)
+            Switch(
+                checked = powerOn,
+                onCheckedChange = { on ->
+                    AppLog.d(TAG, "power ${if (on) "on" else "off"}")
+                    powerOn = on
+                    ble.send(Commands.power(on))
+                    scope.launch { store.setPowerOn(on) }
+                },
                 enabled = connected,
-            ) { Text("On") }
-            OutlinedButton(
-                onClick = { AppLog.d(TAG, "power off pressed"); ble.send(Commands.power(false)) },
-                enabled = connected,
-            ) { Text("Off") }
+            )
         }
 
         LabeledSlider(
