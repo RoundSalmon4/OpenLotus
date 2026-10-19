@@ -1,0 +1,131 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: build only, or publish a tag and release
+        type: choice
+        options:
+          - build
+          - publish
+        default: build
+      changelog_version:
+        description: version for the release notes, defaults to the current one
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read version
+        id: version
+        run: |
+          MAJOR=$(grep 'appVersionMajor' gradle/version.gradle.kts | grep -oP '\d+')
+          MINOR=$(grep 'appVersionMinor' gradle/version.gradle.kts | grep -oP '\d+')
+          PATCH=$(grep 'appVersionPatch' gradle/version.gradle.kts | grep -oP '\d+')
+          echo "version=$MAJOR.$MINOR.$PATCH" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "9.8.1"
+          validate-wrappers: false
+
+      - name: test protocol
+        run: gradle :protocol:test --no-daemon
+
+      - name: test app
+        run: gradle :app:testDebugUnitTest --no-daemon
+
+      - name: Set up release keystore
+        env:
+          RELEASE_KEYSTORE: ${{ secrets.RELEASE_KEYSTORE }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE" ]; then
+            echo "No RELEASE_KEYSTORE secret, the build will be unsigned"
+            exit 0
+          fi
+          printf '%s' "$RELEASE_KEYSTORE" | base64 -d > release.keystore
+          echo "RELEASE_KEYSTORE_PATH=$PWD/release.keystore" >> "$GITHUB_ENV"
+          echo "RELEASE_KEYSTORE_PASSWORD=$RELEASE_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_ALIAS=$RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Build release apk
+        run: |
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) \
+          gradle :app:assembleRelease --no-daemon -PversionOverride=${{ steps.version.outputs.version }}
+
+      - name: Rename apk
+        run: |
+          mv app/build/outputs/apk/release/*.apk "app/build/outputs/apk/release/OpenLotus-${{ steps.version.outputs.version }}.apk"
+
+      - name: Upload apk
+        if: ${{ inputs.mode == 'build' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: OpenLotus-${{ steps.version.outputs.version }}
+          path: app/build/outputs/apk/release/OpenLotus-${{ steps.version.outputs.version }}.apk
+          if-no-files-found: error
+
+      - name: Build release body
+        if: ${{ inputs.mode == 'publish' }}
+        id: body
+        env:
+          CHANGELOG_VERSION: ${{ inputs.changelog_version }}
+        run: |
+          VERSION="${CHANGELOG_VERSION:-${{ steps.version.outputs.version }}}"
+          cat > /tmp/release_body.md << BODYEOF
+          **Version:** v${{ steps.version.outputs.version }}
+
+          **Build:** release, signed if the repo has the release keystore secrets
+
+          ---
+
+          BODYEOF
+          if grep -q "^## v${VERSION} " CHANGELOG.md; then
+            echo "## What's Changed" >> /tmp/release_body.md
+            echo "" >> /tmp/release_body.md
+            awk "/^## v${VERSION}"' /{flag=1; next} /^## /{flag=0} flag' CHANGELOG.md >> /tmp/release_body.md
+          fi
+          echo "path=/tmp/release_body.md" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag
+        if: ${{ inputs.mode == 'publish' }}
+        run: |
+          git config user.name "roundsalmon4"
+          git config user.email "209016228+RoundSalmon4@users.noreply.github.com"
+          TAG="v${{ steps.version.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"
+            exit 1
+          fi
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Create release
+        if: ${{ inputs.mode == 'publish' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          body_path: ${{ steps.body.outputs.path }}
+          files: |
+            app/build/outputs/apk/release/OpenLotus-${{ steps.version.outputs.version }}.apk
+          make_latest: true

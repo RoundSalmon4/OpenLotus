@@ -5,14 +5,6 @@ on:
     branches: [ main ]
   pull_request:
   workflow_dispatch:
-    inputs:
-      variant:
-        description: apk variant to build
-        type: choice
-        options:
-          - debug
-          - release
-        default: debug
 
 jobs:
   build:
@@ -37,15 +29,10 @@ jobs:
         run: gradle :app:testDebugUnitTest --no-daemon
 
       - name: assemble debug
-        if: ${{ inputs.variant != 'release' }}
         run: gradle :app:assembleDebug --no-daemon
-
-      - name: assemble release
-        if: ${{ inputs.variant == 'release' }}
-        run: gradle :app:assembleRelease --no-daemon
 
       - uses: actions/upload-artifact@v7
         with:
-          name: openlotus-${{ inputs.variant || 'debug' }}
-          path: app/build/outputs/apk/**/*.apk
+          name: openlotus-debug
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
