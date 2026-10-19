@@ -53,8 +53,8 @@ spell each frame out.
 | pin order | `7E 06 81 <r pin> <g pin> <b pin> FF 00 EF` |
 | mic sensitivity | `7E 04 06 <0-100> FF FF FF 00 EF` |
 | mic on/off | `7E 04 07 <0 or 1> FF FF FF 00 EF` |
-| clock | `7E 07 83 <h> <m> <s> <weekday> FF EF` |
-| schedule | `7E 08 82 <h> <m> <s> <mode> <weekdays> EF` |
+| clock | `7E 07 83 <h> <m> <s> <weekday, 0=Sun> FF EF` |
+| timer on/off | `7E 08 82 <h> <m> <s> <0 on, 1 off> <weekdays> EF` |
 
 Light mode values: 0 all, 1 RGB, 2 white, 3 color temperature, 4 laser.
 
@@ -85,6 +85,20 @@ stock set is the default and the legacy set stays as a fallback for other units.
 I could not find a firmware command for a timed multi color sequence. The stock
 app stores a custom palette and animates colors from the phone, so OpenLotus
 does the same: a static color frame is written every dwell interval.
+
+## Timer
+
+The strip keeps two daily timers, one to turn on and one to turn off. Each is the
+frame `7E 08 82 <h> <m> <s> <mode> <weekdays> EF`, where mode is 0 for the on
+timer and 1 for the off timer. The weekdays byte is a bitmask: bit 0 is Monday
+through bit 6 is Sunday, and bit 7 is the enable flag, so `0x80` means the timer
+is set but off. The strip fires against its own clock, so the clock frame has to
+go first. That clock's weekday byte is 0 for Sunday through 6 for Saturday, the
+same as the stock app's `Time.weekDay`.
+
+This came from the stock app's `TimingFragment`, which also reads the timers back
+by reading the command characteristic and parsing the same `7E 08 82 ...` frame.
+Not confirmed on hardware yet.
 
 ## Encrypted variant
 

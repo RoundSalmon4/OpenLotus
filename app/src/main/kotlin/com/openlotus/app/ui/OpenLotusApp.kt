@@ -9,12 +9,16 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -32,6 +36,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -56,11 +61,15 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -75,6 +84,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 private const val TAG = "ui"
 
@@ -183,13 +197,19 @@ fun OpenLotusApp() {
             )
             Tab(
                 selected = tab == 2,
-                onClick = { AppLog.d(TAG, "tab log"); tab = 2 },
+                onClick = { AppLog.d(TAG, "tab timer"); tab = 2 },
+                text = { Text("Timer") },
+            )
+            Tab(
+                selected = tab == 3,
+                onClick = { AppLog.d(TAG, "tab log"); tab = 3 },
                 text = { Text("Log") },
             )
         }
         when (tab) {
             0 -> DeviceScreen(ble)
             1 -> ControlScreen(ble, player, scope, store)
+            2 -> TimerScreen(ble, scope, store)
             else -> LogScreen()
         }
     }
@@ -278,6 +298,7 @@ private fun ControlScreen(
     val sequence = rememberSaveable(saver = sequenceSaver) { mutableStateListOf<SequenceStep>() }
     var powerOn by rememberSaveable { mutableStateOf(false) }
     var seeded by rememberSaveable { mutableStateOf(false) }
+    var showWheel by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         if (seeded) return@LaunchedEffect
@@ -362,7 +383,32 @@ private fun ControlScreen(
                 .clip(MaterialTheme.shapes.small)
                 .background(Color(AndroidColor.rgb(red, green, blue)))
                 .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                .clickable {
+                    AppLog.d(TAG, "open color wheel")
+                    showWheel = true
+                }
         )
+        Text(
+            "Tap the swatch for a color wheel, or use the sliders.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (showWheel) {
+            ColorWheelDialog(
+                initialRed = red,
+                initialGreen = green,
+                initialBlue = blue,
+                onDismiss = { showWheel = false },
+                onConfirm = { r, g, b ->
+                    AppLog.d(TAG, "wheel color $r,$g,$b")
+                    red = r
+                    green = g
+                    blue = b
+                    ble.send(Commands.color(r, g, b))
+                    scope.launch { store.setColor(r, g, b) }
+                    showWheel = false
+                },
+            )
+        }
         LabeledSlider("Red $red", red.toFloat(), 0f..255f, connected, { red = it.toInt() }, {
             AppLog.d(TAG, "color $red,$green,$blue")
             ble.send(Commands.color(red, green, blue))
@@ -572,13 +618,14 @@ private fun ControlScreen(
         OutlinedButton(
             onClick = {
                 val now = Calendar.getInstance()
-                AppLog.d(TAG, "sync clock pressed")
+                val weekday = now.get(Calendar.DAY_OF_WEEK) - 1
+                AppLog.d(TAG, "sync clock pressed, weekday $weekday")
                 ble.send(
                     Commands.systemTime(
                         now.get(Calendar.HOUR_OF_DAY),
                         now.get(Calendar.MINUTE),
                         now.get(Calendar.SECOND),
-                        now.get(Calendar.DAY_OF_WEEK),
+                        weekday,
                     )
                 )
             },
@@ -628,6 +675,7 @@ private fun LabeledSlider(
     enabled: Boolean,
     onChange: (Float) -> Unit,
     onFinished: () -> Unit,
+    steps: Int = 0,
 ) {
     Column {
         Text(label, style = MaterialTheme.typography.bodySmall)
@@ -642,10 +690,301 @@ private fun LabeledSlider(
                 onFinished()
             },
             valueRange = range,
+            steps = steps,
             enabled = enabled,
         )
     }
 }
+
+@Composable
+private fun ColorWheelDialog(
+    initialRed: Int,
+    initialGreen: Int,
+    initialBlue: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Int, Int) -> Unit,
+) {
+    val initial = remember {
+        FloatArray(3).also { AndroidColor.colorToHSV(AndroidColor.rgb(initialRed, initialGreen, initialBlue), it) }
+    }
+    var hue by remember { mutableStateOf(initial[0]) }
+    var saturation by remember { mutableStateOf(initial[1]) }
+    var value by remember { mutableStateOf(initial[2]) }
+    val rgb = AndroidColor.HSVToColor(floatArrayOf(hue, saturation, value))
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Pick a color", style = MaterialTheme.typography.titleSmall)
+                HsvWheel(hue = hue, saturation = saturation) { h, s ->
+                    hue = h
+                    saturation = s
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp)
+                        .clip(MaterialTheme.shapes.small)
+                        .background(Color(rgb)),
+                )
+                LabeledSlider(
+                    label = "Value ${(value * 100).roundToInt()}%",
+                    value = value,
+                    range = 0f..1f,
+                    enabled = true,
+                    onChange = { value = it },
+                    onFinished = {},
+                )
+                Text(hex(rgb), style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+                    Button(
+                        onClick = {
+                            onConfirm(
+                                AndroidColor.red(rgb),
+                                AndroidColor.green(rgb),
+                                AndroidColor.blue(rgb),
+                            )
+                        },
+                    ) { Text("Use color") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HsvWheel(hue: Float, saturation: Float, onChange: (Float, Float) -> Unit) {
+    val hueColors = listOf(
+        Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red,
+    )
+    Canvas(
+        modifier = Modifier
+            .size(220.dp)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val center = Offset(size.width / 2f, size.height / 2f)
+                    val maxRadius = size.width / 2f
+                    fun report(position: Offset) {
+                        val dx = position.x - center.x
+                        val dy = position.y - center.y
+                        var degrees = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+                        if (degrees < 0f) degrees += 360f
+                        val distance = sqrt(dx * dx + dy * dy)
+                        onChange(degrees % 360f, (distance / maxRadius).coerceIn(0f, 1f))
+                    }
+                    val down = awaitFirstDown()
+                    report(down.position)
+                    down.consume()
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        if (!change.pressed) break
+                        report(change.position)
+                        change.consume()
+                    }
+                }
+            },
+    ) {
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val radius = size.minDimension / 2f
+        drawCircle(
+            brush = Brush.sweepGradient(hueColors, center),
+            radius = radius,
+            center = center,
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color.White, Color.White.copy(alpha = 0f)),
+                center = center,
+                radius = radius,
+            ),
+            radius = radius,
+            center = center,
+        )
+        val angle = Math.toRadians(hue.toDouble())
+        val thumbRadius = (saturation * radius).toDouble()
+        val thumb = Offset(
+            center.x + (cos(angle) * thumbRadius).toFloat(),
+            center.y + (sin(angle) * thumbRadius).toFloat(),
+        )
+        drawCircle(color = Color.Black, radius = 9f, center = thumb)
+        drawCircle(color = Color.White, radius = 6f, center = thumb)
+    }
+}
+
+private val weekdayLabels = listOf("M", "T", "W", "T", "F", "S", "S")
+
+@Composable
+private fun TimerScreen(ble: BleManager, scope: CoroutineScope, store: SettingsStore) {
+    AppLog.t(TAG, "TimerScreen()")
+    val connected = ble.connectedDevice != null
+    var onEnabled by rememberSaveable { mutableStateOf(false) }
+    var onHour by rememberSaveable { mutableStateOf(8) }
+    var onMinute by rememberSaveable { mutableStateOf(0) }
+    var onWeeks by rememberSaveable { mutableStateOf(0) }
+    var offEnabled by rememberSaveable { mutableStateOf(false) }
+    var offHour by rememberSaveable { mutableStateOf(23) }
+    var offMinute by rememberSaveable { mutableStateOf(0) }
+    var offWeeks by rememberSaveable { mutableStateOf(0) }
+    var seeded by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (seeded) return@LaunchedEffect
+        val loaded = store.settingsFlow.first()
+        onEnabled = loaded.timerOnEnabled
+        onHour = loaded.timerOnHour
+        onMinute = loaded.timerOnMinute
+        onWeeks = loaded.timerOnWeeks
+        offEnabled = loaded.timerOffEnabled
+        offHour = loaded.timerOffHour
+        offMinute = loaded.timerOffMinute
+        offWeeks = loaded.timerOffWeeks
+        seeded = true
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (!connected) {
+            Text("Connect to a strip first.", style = MaterialTheme.typography.bodyMedium)
+        }
+        Text("Timer", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "The strip runs these two times itself, so they still fire when the phone is away. " +
+                "Pick your days, then send once. Sending also sets the strip's clock.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        TimerEditor(
+            title = "Turn on at",
+            enabled = onEnabled,
+            onEnabledChange = { onEnabled = it },
+            hour = onHour,
+            onHourChange = { onHour = it },
+            minute = onMinute,
+            onMinuteChange = { onMinute = it },
+            weeks = onWeeks,
+            onWeeksChange = { onWeeks = it },
+        )
+        HorizontalDivider()
+        TimerEditor(
+            title = "Turn off at",
+            enabled = offEnabled,
+            onEnabledChange = { offEnabled = it },
+            hour = offHour,
+            onHourChange = { offHour = it },
+            minute = offMinute,
+            onMinuteChange = { offMinute = it },
+            weeks = offWeeks,
+            onWeeksChange = { offWeeks = it },
+        )
+        Button(
+            onClick = {
+                val now = Calendar.getInstance()
+                val weekday = now.get(Calendar.DAY_OF_WEEK) - 1
+                AppLog.d(
+                    TAG,
+                    "send timers on=$onEnabled $onHour:$onMinute w=$onWeeks " +
+                        "off=$offEnabled $offHour:$offMinute w=$offWeeks",
+                )
+                ble.send(
+                    Commands.systemTime(
+                        now.get(Calendar.HOUR_OF_DAY),
+                        now.get(Calendar.MINUTE),
+                        now.get(Calendar.SECOND),
+                        weekday,
+                    )
+                )
+                ble.send(Commands.schedule(onHour, onMinute, 0, 0, weeksWithEnable(onEnabled, onWeeks)))
+                ble.send(Commands.schedule(offHour, offMinute, 0, 1, weeksWithEnable(offEnabled, offWeeks)))
+                scope.launch {
+                    store.setTimer(on = true, enabled = onEnabled, hour = onHour, minute = onMinute, weeks = onWeeks)
+                    store.setTimer(on = false, enabled = offEnabled, hour = offHour, minute = offMinute, weeks = offWeeks)
+                }
+            },
+            enabled = connected,
+        ) {
+            Text("Send to strip")
+        }
+    }
+}
+
+@Composable
+private fun TimerEditor(
+    title: String,
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    hour: Int,
+    onHourChange: (Int) -> Unit,
+    minute: Int,
+    onMinuteChange: (Int) -> Unit,
+    weeks: Int,
+    onWeeksChange: (Int) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = enabled, onCheckedChange = onEnabledChange)
+        }
+        LabeledSlider(
+            label = "Hour $hour",
+            value = hour.toFloat(),
+            range = 0f..23f,
+            enabled = enabled,
+            onChange = { onHourChange(it.toInt()) },
+            onFinished = {},
+            steps = 22,
+        )
+        LabeledSlider(
+            label = "Minute $minute",
+            value = minute.toFloat(),
+            range = 0f..59f,
+            enabled = enabled,
+            onChange = { onMinuteChange(it.toInt()) },
+            onFinished = {},
+            steps = 58,
+        )
+        WeekdayPicker(weeks = weeks, enabled = enabled, onChange = onWeeksChange)
+    }
+}
+
+@Composable
+private fun WeekdayPicker(weeks: Int, enabled: Boolean, onChange: (Int) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+        weekdayLabels.forEachIndexed { index, label ->
+            val selected = (weeks and (1 shl index)) != 0
+            OutlinedButton(
+                onClick = {
+                    val next = if (selected) weeks and (1 shl index).inv() else weeks or (1 shl index)
+                    AppLog.d(TAG, "timer weekday $index -> ${Integer.toBinaryString(next)}")
+                    onChange(next)
+                },
+                enabled = enabled,
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.weight(1f).height(40.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = if (selected) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+                ),
+            ) {
+                Text(label, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
+            }
+        }
+    }
+}
+
+private fun weeksWithEnable(enabled: Boolean, weeks: Int): Int =
+    (weeks and 0x7F) or (if (enabled) 0x80 else 0)
 
 @Composable
 private fun PermissionBanner(onRequest: () -> Unit, onSettings: () -> Unit) {

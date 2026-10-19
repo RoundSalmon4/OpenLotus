@@ -213,11 +213,13 @@ object Commands {
             Frame.of(0x7E, 0x04, 0x07, if (on) 1 else 0, 0xFF, 0xFF, 0xFF, 0x00, 0xEF),
         )
 
+    // Weekday is 0 = Sunday through 6 = Saturday, matching the stock app's
+    // Time.weekDay. The strip's timer uses this to pick the firing day.
     fun systemTime(hour: Int, minute: Int, second: Int, weekday: Int): ByteArray {
         val h = hour.coerceIn(0, 23)
         val m = minute.coerceIn(0, 59)
         val s = second.coerceIn(0, 59)
-        val w = weekday.coerceIn(0, 7)
+        val w = weekday.coerceIn(0, 6)
         if (h != hour || m != minute || s != second || w != weekday) {
             ProtocolLog.log("clock clamped $hour:$minute:$second day $weekday -> $h:$m:$s day $w")
         }

@@ -29,6 +29,14 @@ data class Settings(
     val sequenceJson: String = "[]",
     val lastDeviceAddress: String = "",
     val lastDeviceName: String = "",
+    val timerOnEnabled: Boolean = false,
+    val timerOnHour: Int = 8,
+    val timerOnMinute: Int = 0,
+    val timerOnWeeks: Int = 0,
+    val timerOffEnabled: Boolean = false,
+    val timerOffHour: Int = 23,
+    val timerOffMinute: Int = 0,
+    val timerOffWeeks: Int = 0,
 )
 
 object Keys {
@@ -42,6 +50,14 @@ object Keys {
     val sequenceJson = stringPreferencesKey("sequence_json")
     val lastDeviceAddress = stringPreferencesKey("last_device_address")
     val lastDeviceName = stringPreferencesKey("last_device_name")
+    val timerOnEnabled = booleanPreferencesKey("timer_on_enabled")
+    val timerOnHour = intPreferencesKey("timer_on_hour")
+    val timerOnMinute = intPreferencesKey("timer_on_minute")
+    val timerOnWeeks = intPreferencesKey("timer_on_weeks")
+    val timerOffEnabled = booleanPreferencesKey("timer_off_enabled")
+    val timerOffHour = intPreferencesKey("timer_off_hour")
+    val timerOffMinute = intPreferencesKey("timer_off_minute")
+    val timerOffWeeks = intPreferencesKey("timer_off_weeks")
 }
 
 class SettingsStore(private val context: Context) {
@@ -98,6 +114,26 @@ class SettingsStore(private val context: Context) {
         }
     }
 
+    suspend fun setTimer(on: Boolean, enabled: Boolean, hour: Int, minute: Int, weeks: Int) {
+        val h = hour.coerceIn(0, 23)
+        val m = minute.coerceIn(0, 59)
+        val w = weeks and 0xFF
+        AppLog.d(TAG, "setTimer ${if (on) "on" else "off"} enabled=$enabled $h:$m weeks=${Integer.toBinaryString(w)}")
+        context.dataStore.edit {
+            if (on) {
+                it[Keys.timerOnEnabled] = enabled
+                it[Keys.timerOnHour] = h
+                it[Keys.timerOnMinute] = m
+                it[Keys.timerOnWeeks] = w
+            } else {
+                it[Keys.timerOffEnabled] = enabled
+                it[Keys.timerOffHour] = h
+                it[Keys.timerOffMinute] = m
+                it[Keys.timerOffWeeks] = w
+            }
+        }
+    }
+
     private fun mapToSettings(prefs: Preferences): Settings {
         val settings = Settings(
             brightness = prefs[Keys.brightness] ?: 60,
@@ -110,13 +146,23 @@ class SettingsStore(private val context: Context) {
             sequenceJson = prefs[Keys.sequenceJson] ?: "[]",
             lastDeviceAddress = prefs[Keys.lastDeviceAddress] ?: "",
             lastDeviceName = prefs[Keys.lastDeviceName] ?: "",
+            timerOnEnabled = prefs[Keys.timerOnEnabled] ?: false,
+            timerOnHour = prefs[Keys.timerOnHour] ?: 8,
+            timerOnMinute = prefs[Keys.timerOnMinute] ?: 0,
+            timerOnWeeks = prefs[Keys.timerOnWeeks] ?: 0,
+            timerOffEnabled = prefs[Keys.timerOffEnabled] ?: false,
+            timerOffHour = prefs[Keys.timerOffHour] ?: 23,
+            timerOffMinute = prefs[Keys.timerOffMinute] ?: 0,
+            timerOffWeeks = prefs[Keys.timerOffWeeks] ?: 0,
         )
         AppLog.v(
             TAG,
             "loaded brightness=${settings.brightness} speed=${settings.speed} " +
                 "rgb=${settings.red},${settings.green},${settings.blue} " +
                 "dwell=${settings.dwellMs} power=${settings.powerOn} " +
-                "sequence=${settings.sequenceJson.length}b last=${settings.lastDeviceAddress}",
+                "sequence=${settings.sequenceJson.length}b last=${settings.lastDeviceAddress} " +
+                "timerOn=${settings.timerOnEnabled}@${settings.timerOnHour}:${settings.timerOnMinute}w${settings.timerOnWeeks} " +
+                "timerOff=${settings.timerOffEnabled}@${settings.timerOffHour}:${settings.timerOffMinute}w${settings.timerOffWeeks}",
         )
         return settings
     }

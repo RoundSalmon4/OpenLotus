@@ -26,3 +26,11 @@ Dates are based on UTC.
 - fixed the layout drawing under the status bar, which hid the tabs behind the
   camera cutout on a pixel 7 (edge to edge insets)
 - one scan line per device per scan, so a busy room does not flood the log tab
+- a color wheel on the swatch, so you can pick a color by eye instead of
+  knowing its RGB values
+- a timer tab that sets the strip's own turn on and turn off times, with a
+  weekday repeat, so the lights can switch while the phone is away
+- the clock sync now sends the weekday the way the strip expects (Sunday is 0),
+  which the timer relies on
+- keep the link alive with a periodic read, ask for a faster connection
+  interval, and retry the first reconnect sooner
