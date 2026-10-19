@@ -43,7 +43,13 @@ class BleManager(private val context: Context) {
         private val NAME_PREFIXES = listOf("ELK-", "ELK~", "ELK_", "CLK-", "XSL-", "LED LIGHT STRIP")
 
         private const val MAX_RECONNECT_ATTEMPTS = 5
+        private const val FIRST_RECONNECT_DELAY_MS = 300L
         private const val RECONNECT_DELAY_MS = 2000L
+
+        // The strip drops the link when it sees no traffic for a while, so a
+        // harmless read every few seconds keeps the connection alive. Logged so
+        // a capture can tell whether it actually helps.
+        private const val KEEPALIVE_MS = 8000L
 
         private fun isSupported(name: String?): Boolean {
             if (name.isNullOrBlank()) return false
@@ -67,6 +73,7 @@ class BleManager(private val context: Context) {
     private var lastDevice: BleDevice? = null
     private var manualDisconnect = false
     private var reconnectAttempts = 0
+    private var keepaliveRunnable: Runnable? = null
 
     // GATT callbacks arrive on binder threads, so state changes are posted to
     // the main thread before they touch Compose state.
@@ -193,6 +200,7 @@ class BleManager(private val context: Context) {
         AppLog.d(TAG, "disconnect()")
         manualDisconnect = true
         main.removeCallbacks(reconnectRunnable)
+        stopKeepalive()
         val current = gatt
         gatt = null
         writeCharacteristic = null
@@ -219,10 +227,11 @@ class BleManager(private val context: Context) {
             return
         }
         reconnectAttempts++
-        AppLog.d(TAG, "reconnect $reconnectAttempts/$MAX_RECONNECT_ATTEMPTS in ${RECONNECT_DELAY_MS}ms")
+        val delay = if (reconnectAttempts == 1) FIRST_RECONNECT_DELAY_MS else RECONNECT_DELAY_MS
+        AppLog.d(TAG, "reconnect $reconnectAttempts/$MAX_RECONNECT_ATTEMPTS in ${delay}ms")
         updateStatus("Reconnecting ($reconnectAttempts/$MAX_RECONNECT_ATTEMPTS)")
         main.removeCallbacks(reconnectRunnable)
-        main.postDelayed(reconnectRunnable, RECONNECT_DELAY_MS)
+        main.postDelayed(reconnectRunnable, delay)
     }
 
     private fun attemptReconnect() {
@@ -230,6 +239,34 @@ class BleManager(private val context: Context) {
         val device = lastDevice ?: return
         AppLog.d(TAG, "reconnecting to ${device.address}")
         openGatt(device)
+    }
+
+    // A benign GATT read keeps the link from idling out. fff3 advertises READ,
+    // so this works without touching the lighting state.
+    private fun startKeepalive() {
+        stopKeepalive()
+        val runnable = object : Runnable {
+            override fun run() {
+                val current = gatt
+                val characteristic = writeCharacteristic
+                if (current == null || characteristic == null) return
+                try {
+                    val sent = current.readCharacteristic(characteristic)
+                    AppLog.v(TAG, "keepalive read $sent")
+                } catch (e: SecurityException) {
+                    AppLog.e(TAG, "keepalive denied", e)
+                }
+                main.postDelayed(this, KEEPALIVE_MS)
+            }
+        }
+        keepaliveRunnable = runnable
+        main.postDelayed(runnable, KEEPALIVE_MS)
+        AppLog.d(TAG, "keepalive every ${KEEPALIVE_MS}ms")
+    }
+
+    private fun stopKeepalive() {
+        keepaliveRunnable?.let { main.removeCallbacks(it) }
+        keepaliveRunnable = null
     }
 
     @Suppress("DEPRECATION")
@@ -288,6 +325,7 @@ class BleManager(private val context: Context) {
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 AppLog.d(TAG, "disconnected from ${gatt.device.address}")
                 writeCharacteristic = null
+                stopKeepalive()
                 post { connectedDevice = null }
                 try {
                     gatt.close()
@@ -326,6 +364,13 @@ class BleManager(private val context: Context) {
             } catch (e: SecurityException) {
                 AppLog.e(TAG, "requestMtu denied", e)
             }
+            try {
+                gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+                AppLog.d(TAG, "asked for high connection priority")
+            } catch (e: SecurityException) {
+                AppLog.e(TAG, "requestConnectionPriority denied", e)
+            }
+            startKeepalive()
             updateStatus("Connected")
         }
 
