@@ -41,6 +41,7 @@ data class Settings(
     val calGreenGain: Float = 1f,
     val calBlueGain: Float = 1f,
     val calGamma: Float = 1f,
+    val presetColors: String = "",
 )
 
 object Keys {
@@ -66,6 +67,7 @@ object Keys {
     val calGreenGain = floatPreferencesKey("cal_green_gain")
     val calBlueGain = floatPreferencesKey("cal_blue_gain")
     val calGamma = floatPreferencesKey("cal_gamma")
+    val presetColors = stringPreferencesKey("preset_colors")
 }
 
 class SettingsStore(private val context: Context) {
@@ -122,7 +124,10 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    suspend fun setCalibration(redGain: Float, greenGain: Float, blueGain: Float, gamma: Float) {
+    suspend fun setPresetColors(json: String) {
+        AppLog.d(TAG, "setPresetColors len=${json.length}")
+        context.dataStore.edit { it[Keys.presetColors] = json }
+    }
         AppLog.d(TAG, "setCalibration r=$redGain g=$greenGain b=$blueGain gamma=$gamma")
         context.dataStore.edit {
             it[Keys.calRedGain] = redGain
@@ -174,6 +179,7 @@ class SettingsStore(private val context: Context) {
             calGreenGain = prefs[Keys.calGreenGain] ?: 1f,
             calBlueGain = prefs[Keys.calBlueGain] ?: 1f,
             calGamma = prefs[Keys.calGamma] ?: 1f,
+            presetColors = prefs[Keys.presetColors] ?: "",
         )
         AppLog.v(
             TAG,
@@ -183,7 +189,8 @@ class SettingsStore(private val context: Context) {
                 "sequence=${settings.sequenceJson.length}b last=${settings.lastDeviceAddress} " +
                 "timerOn=${settings.timerOnEnabled}@${settings.timerOnHour}:${settings.timerOnMinute}w${settings.timerOnWeeks} " +
                 "timerOff=${settings.timerOffEnabled}@${settings.timerOffHour}:${settings.timerOffMinute}w${settings.timerOffWeeks} " +
-                "cal=${settings.calRedGain},${settings.calGreenGain},${settings.calBlueGain},${settings.calGamma}",
+                "cal=${settings.calRedGain},${settings.calGreenGain},${settings.calBlueGain},${settings.calGamma} " +
+                "presets=${settings.presetColors.length}",
         )
         return settings
     }
