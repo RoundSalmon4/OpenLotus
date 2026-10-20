@@ -407,6 +407,7 @@ private fun ControlScreen(
                     red = r
                     green = g
                     blue = b
+                    player.stop()
                     sendCal(ble,r,g,b)
                     scope.launch { store.setColor(r,g,b) }
                     showWheel = false
@@ -415,18 +416,21 @@ private fun ControlScreen(
         }
         LabeledSlider("Red $red", red.toFloat(), 0f..255f, connected, { red = it.toInt() }, {
             AppLog.d(TAG, "color $red,$green,$blue")
+            player.stop()
             sendCal(ble,red,green,blue)
-            scope.launch { store.setColor(red, green, blue) }
+            scope.launch { store.setColor(red,green,blue) }
         })
         LabeledSlider("Green $green", green.toFloat(), 0f..255f, connected, { green = it.toInt() }, {
             AppLog.d(TAG, "color $red,$green,$blue")
+            player.stop()
             sendCal(ble,red,green,blue)
-            scope.launch { store.setColor(red, green, blue) }
+            scope.launch { store.setColor(red,green,blue) }
         })
         LabeledSlider("Blue $blue", blue.toFloat(), 0f..255f, connected, { blue = it.toInt() }, {
             AppLog.d(TAG, "color $red,$green,$blue")
+            player.stop()
             sendCal(ble,red,green,blue)
-            scope.launch { store.setColor(red, green, blue) }
+            scope.launch { store.setColor(red,green,blue) }
         })
 
         HorizontalDivider()
@@ -437,6 +441,7 @@ private fun ControlScreen(
                     OutlinedButton(
                         onClick = {
                             AppLog.d(TAG, "mode ${mode.name} (0x%02X)".format(mode.code))
+                            player.stop()
                             ble.send(Commands.mode(mode))
                         },
                         enabled = connected,
