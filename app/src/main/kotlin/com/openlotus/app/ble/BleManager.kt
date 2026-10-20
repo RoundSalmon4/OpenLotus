@@ -51,6 +51,12 @@ class BleManager(private val context: Context) {
         // a capture can tell whether it actually helps.
         private const val KEEPALIVE_MS = 8000L
 
+        // GATT allows one operation at a time, so writes are queued and sent one
+        // at a time. The strip rejects a write with status 201 while busy.
+        private const val MAX_QUEUED_WRITES = 16
+        private const val WRITE_TIMEOUT_MS = 1200L
+        private const val WRITE_RETRY_MS = 60L
+
         private fun isSupported(name: String?): Boolean {
             if (name.isNullOrBlank()) return false
             return NAME_PREFIXES.any { name.startsWith(it) }
@@ -75,6 +81,13 @@ class BleManager(private val context: Context) {
     private var reconnectAttempts = 0
     private var keepaliveRunnable: Runnable? = null
     private var lastWriteAt = 0L
+
+    // GATT only allows one operation at a time. The strip rejects a write with
+    // status 201 (busy) while another one is in flight, so sends are queued and
+    // dribbled out one at a time. A small cap keeps a fast drag from piling up.
+    private val writeQueue = ArrayDeque<ByteArray>()
+    private var writeInFlight = false
+    private var writeTimeout: Runnable? = null
 
     // GATT callbacks arrive on binder threads, so state changes are posted to
     // the main thread before they touch Compose state.
@@ -251,6 +264,10 @@ class BleManager(private val context: Context) {
                 val current = gatt
                 val characteristic = writeCharacteristic
                 if (current == null || characteristic == null) return
+                if (writeInFlight || writeQueue.isNotEmpty()) {
+                    main.postDelayed(this, KEEPALIVE_MS)
+                    return
+                }
                 if (System.currentTimeMillis() - lastWriteAt < 1500L) {
                     main.postDelayed(this, KEEPALIVE_MS)
                     return
@@ -279,34 +296,83 @@ class BleManager(private val context: Context) {
     @Suppress("DEPRECATION")
     fun send(frame: ByteArray) {
         AppLog.d(TAG, "send ${Frame.hex(frame)}")
-        lastWriteAt = System.currentTimeMillis()
-        val current = gatt
-        val characteristic = writeCharacteristic
-        if (current == null || characteristic == null) {
+        post { enqueueWrite(frame) }
+    }
+
+    private fun enqueueWrite(frame: ByteArray) {
+        if (gatt == null || writeCharacteristic == null) {
             AppLog.e(TAG, "send dropped, not connected")
             return
         }
-        try {
-            val type = if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0) {
-                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-            } else {
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        if (writeQueue.size >= MAX_QUEUED_WRITES) {
+            AppLog.v(TAG, "write queue full, dropping oldest")
+            writeQueue.removeFirst()
+        }
+        writeQueue.addLast(frame)
+        pumpWrites()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun pumpWrites() {
+        if (writeInFlight) return
+        val current = gatt
+        val characteristic = writeCharacteristic
+        if (current == null || characteristic == null) {
+            writeQueue.clear()
+            AppLog.e(TAG, "send dropped, not connected")
+            return
+        }
+        val frame = writeQueue.removeFirstOrNull() ?: return
+        lastWriteAt = System.currentTimeMillis()
+        writeInFlight = true
+        val type = if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0) {
+            BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        } else {
+            BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        }
+        val watchdog = Runnable {
+            if (writeInFlight) {
+                AppLog.d(TAG, "write timed out, moving on")
+                writeInFlight = false
+                pumpWrites()
             }
-            AppLog.v(TAG, "write type $type, properties ${characteristic.properties}")
+        }
+        writeTimeout = watchdog
+        main.postDelayed(watchdog, WRITE_TIMEOUT_MS)
+        try {
+            AppLog.v(TAG, "write type $type, properties ${characteristic.properties}, queued ${writeQueue.size}")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val result = current.writeCharacteristic(characteristic, frame, type)
-                AppLog.v(TAG, "writeCharacteristic result $result")
-                if (result != 0) AppLog.e(TAG, "write rejected, status $result")
+                if (result != 0) {
+                    AppLog.e(TAG, "write rejected, status $result")
+                    onWriteFinished()
+                    if (result == 201) {
+                        writeQueue.addFirst(frame)
+                        main.postDelayed({ pumpWrites() }, WRITE_RETRY_MS)
+                    } else {
+                        pumpWrites()
+                    }
+                }
             } else {
                 characteristic.writeType = type
                 characteristic.value = frame
                 val accepted = current.writeCharacteristic(characteristic)
-                AppLog.v(TAG, "writeCharacteristic accepted $accepted")
-                if (!accepted) AppLog.e(TAG, "write rejected")
+                if (!accepted) {
+                    AppLog.e(TAG, "write rejected")
+                    onWriteFinished()
+                    pumpWrites()
+                }
             }
         } catch (e: SecurityException) {
             AppLog.e(TAG, "send denied", e)
+            onWriteFinished()
         }
+    }
+
+    private fun onWriteFinished() {
+        writeTimeout?.let { main.removeCallbacks(it) }
+        writeTimeout = null
+        writeInFlight = false
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
@@ -333,6 +399,8 @@ class BleManager(private val context: Context) {
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 AppLog.d(TAG, "disconnected from ${gatt.device.address}")
                 writeCharacteristic = null
+                writeQueue.clear()
+                onWriteFinished()
                 stopKeepalive()
                 post { connectedDevice = null }
                 try {
@@ -384,6 +452,14 @@ class BleManager(private val context: Context) {
 
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             AppLog.d(TAG, "mtu $mtu status $status")
+        }
+
+        override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            AppLog.v(TAG, "write complete status $status, queued ${writeQueue.size}")
+            post {
+                onWriteFinished()
+                pumpWrites()
+            }
         }
     }
 }
