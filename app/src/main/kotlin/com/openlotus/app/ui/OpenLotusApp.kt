@@ -413,6 +413,15 @@ private fun ControlScreen(
                     scope.launch { store.setColor(r,g,b) }
                     showWheel = false
                 },
+                onLive = { r,g,b ->
+                    if (connected) {
+                        player.stop()
+                        sendCal(ble,r,g,b)
+                    }
+                    red = r
+                    green = g
+                    blue = b
+                },
             )
         }
         LabeledSlider("Red $red", red.toFloat(), 0f..255f, connected, { red = it.toInt() }, {
@@ -713,6 +722,7 @@ private fun ColorWheelDialog(
     initialBlue: Int,
     onDismiss: () -> Unit,
     onConfirm: (Int, Int, Int) -> Unit,
+    onLive: ((Int,Int,Int)->Unit)? = null,
 ) {
     val initial = remember {
         FloatArray(3).also { AndroidColor.colorToHSV(AndroidColor.rgb(initialRed, initialGreen, initialBlue), it) }
@@ -732,6 +742,10 @@ private fun ColorWheelDialog(
                 HsvWheel(hue = hue, saturation = saturation) { h, s ->
                     hue = h
                     saturation = s
+                    val nr = AndroidColor.red(AndroidColor.HSVToColor(floatArrayOf(hue, saturation, value)))
+                    val ng = AndroidColor.green(AndroidColor.HSVToColor(floatArrayOf(hue, saturation, value)))
+                    val nb = AndroidColor.blue(AndroidColor.HSVToColor(floatArrayOf(hue, saturation, value)))
+                    onLive?.invoke(nr,ng,nb)
                 }
                 Box(
                     modifier = Modifier
@@ -745,7 +759,13 @@ private fun ColorWheelDialog(
                     value = value,
                     range = 0f..1f,
                     enabled = true,
-                    onChange = { value = it },
+                    onChange = { 
+                        value = it
+                        val nr = AndroidColor.red(AndroidColor.HSVToColor(floatArrayOf(hue, saturation, value)))
+                        val ng = AndroidColor.green(AndroidColor.HSVToColor(floatArrayOf(hue, saturation, value)))
+                        val nb = AndroidColor.blue(AndroidColor.HSVToColor(floatArrayOf(hue, saturation, value)))
+                        onLive?.invoke(nr,ng,nb)
+                    },
                     onFinished = {},
                 )
                 Text(hex(rgb), style = MaterialTheme.typography.bodySmall)
