@@ -37,6 +37,10 @@ data class Settings(
     val timerOffHour: Int = 23,
     val timerOffMinute: Int = 0,
     val timerOffWeeks: Int = 0,
+    val calRedGain: Float = 1f,
+    val calGreenGain: Float = 1f,
+    val calBlueGain: Float = 1f,
+    val calGamma: Float = 1f,
 )
 
 object Keys {
@@ -58,6 +62,10 @@ object Keys {
     val timerOffHour = intPreferencesKey("timer_off_hour")
     val timerOffMinute = intPreferencesKey("timer_off_minute")
     val timerOffWeeks = intPreferencesKey("timer_off_weeks")
+    val calRedGain = floatPreferencesKey("cal_red_gain")
+    val calGreenGain = floatPreferencesKey("cal_green_gain")
+    val calBlueGain = floatPreferencesKey("cal_blue_gain")
+    val calGamma = floatPreferencesKey("cal_gamma")
 }
 
 class SettingsStore(private val context: Context) {
@@ -114,7 +122,15 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    suspend fun setTimer(on: Boolean, enabled: Boolean, hour: Int, minute: Int, weeks: Int) {
+    suspend fun setCalibration(redGain: Float, greenGain: Float, blueGain: Float, gamma: Float) {
+        AppLog.d(TAG, "setCalibration r=$redGain g=$greenGain b=$blueGain gamma=$gamma")
+        context.dataStore.edit {
+            it[Keys.calRedGain] = redGain
+            it[Keys.calGreenGain] = greenGain
+            it[Keys.calBlueGain] = blueGain
+            it[Keys.calGamma] = gamma
+        }
+    }
         val h = hour.coerceIn(0, 23)
         val m = minute.coerceIn(0, 59)
         val w = weeks and 0xFF
@@ -154,6 +170,10 @@ class SettingsStore(private val context: Context) {
             timerOffHour = prefs[Keys.timerOffHour] ?: 23,
             timerOffMinute = prefs[Keys.timerOffMinute] ?: 0,
             timerOffWeeks = prefs[Keys.timerOffWeeks] ?: 0,
+            calRedGain = prefs[Keys.calRedGain] ?: 1f,
+            calGreenGain = prefs[Keys.calGreenGain] ?: 1f,
+            calBlueGain = prefs[Keys.calBlueGain] ?: 1f,
+            calGamma = prefs[Keys.calGamma] ?: 1f,
         )
         AppLog.v(
             TAG,
@@ -162,7 +182,8 @@ class SettingsStore(private val context: Context) {
                 "dwell=${settings.dwellMs} power=${settings.powerOn} " +
                 "sequence=${settings.sequenceJson.length}b last=${settings.lastDeviceAddress} " +
                 "timerOn=${settings.timerOnEnabled}@${settings.timerOnHour}:${settings.timerOnMinute}w${settings.timerOnWeeks} " +
-                "timerOff=${settings.timerOffEnabled}@${settings.timerOffHour}:${settings.timerOffMinute}w${settings.timerOffWeeks}",
+                "timerOff=${settings.timerOffEnabled}@${settings.timerOffHour}:${settings.timerOffMinute}w${settings.timerOffWeeks} " +
+                "cal=${settings.calRedGain},${settings.calGreenGain},${settings.calBlueGain},${settings.calGamma}",
         )
         return settings
     }

@@ -74,6 +74,7 @@ class BleManager(private val context: Context) {
     private var manualDisconnect = false
     private var reconnectAttempts = 0
     private var keepaliveRunnable: Runnable? = null
+    private var lastWriteAt = 0L
 
     // GATT callbacks arrive on binder threads, so state changes are posted to
     // the main thread before they touch Compose state.
@@ -250,12 +251,20 @@ class BleManager(private val context: Context) {
                 val current = gatt
                 val characteristic = writeCharacteristic
                 if (current == null || characteristic == null) return
+                if (System.currentTimeMillis() - lastWriteAt < 1500L) {
+                    main.postDelayed(this, KEEPALIVE_MS)
+                    return
+                }
                 try {
                     val sent = current.readCharacteristic(characteristic)
                     AppLog.v(TAG, "keepalive read $sent")
                 } catch (e: SecurityException) {
                     AppLog.e(TAG, "keepalive denied", e)
+                } catch (e: Exception) {
+                    AppLog.v(TAG, "keepalive skipped: ${e.javaClass.simpleName}")
                 }
+                main.postDelayed(this, KEEPALIVE_MS)
+            }
                 main.postDelayed(this, KEEPALIVE_MS)
             }
         }
@@ -269,9 +278,14 @@ class BleManager(private val context: Context) {
         keepaliveRunnable = null
     }
 
+    private var reconnectAttempts = 0
+    private var keepaliveRunnable: Runnable? = null
+    private var lastWriteAt = 0L
+
     @Suppress("DEPRECATION")
     fun send(frame: ByteArray) {
         AppLog.d(TAG, "send ${Frame.hex(frame)}")
+        lastWriteAt = System.currentTimeMillis()
         val current = gatt
         val characteristic = writeCharacteristic
         if (current == null || characteristic == null) {
