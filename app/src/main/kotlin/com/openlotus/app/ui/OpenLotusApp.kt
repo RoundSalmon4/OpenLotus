@@ -308,6 +308,7 @@ private fun ControlScreen(
         if (seeded) return@LaunchedEffect
         val loaded = store.settingsFlow.first()
         AppLog.d(TAG, "seeding controls from saved settings")
+        ColorCal.set(Calibration(loaded.calRedGain, loaded.calGreenGain, loaded.calBlueGain, loaded.calGamma))
         brightness = loaded.brightness
         speed = loaded.speed
         red = loaded.red
