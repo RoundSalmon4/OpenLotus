@@ -607,6 +607,9 @@ private fun ControlScreen(
                     sequence[selected] = sequence[selected].copy(dwellMs = v.toLong())
                 } else {
                     defaultDwell = v
+                    for (i in sequence.indices) {
+                        sequence[i] = sequence[i].copy(dwellMs = v.toLong())
+                    }
                 }
             },
             onFinished = {
