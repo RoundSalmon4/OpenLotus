@@ -303,6 +303,7 @@ private fun ControlScreen(
     var powerOn by rememberSaveable { mutableStateOf(false) }
     var seeded by rememberSaveable { mutableStateOf(false) }
     var showWheel by rememberSaveable { mutableStateOf(false) }
+    var wheelForStep by rememberSaveable { mutableStateOf(-1) }
 
     LaunchedEffect(Unit) {
         if (seeded) return@LaunchedEffect
@@ -399,11 +400,24 @@ private fun ControlScreen(
         )
         if (showWheel) {
             ColorWheelDialog(
-                initialRed = red,
-                initialGreen = green,
-                initialBlue = blue,
-                onDismiss = { showWheel = false },
+                initialRed = if (wheelForStep in sequence.indices) AndroidColor.red(sequence[wheelForStep].color) else red,
+                initialGreen = if (wheelForStep in sequence.indices) AndroidColor.green(sequence[wheelForStep].color) else green,
+                initialBlue = if (wheelForStep in sequence.indices) AndroidColor.blue(sequence[wheelForStep].color) else blue,
+                onDismiss = { showWheel = false; wheelForStep = -1 },
                 onConfirm = { r, g, b ->
+                    if (wheelForStep in sequence.indices) {
+                        val argb = AndroidColor.rgb(r,g,b)
+                        AppLog.d(TAG, "sequence recolor $wheelForStep ${hex(argb)}")
+                        sequence[wheelForStep] = sequence[wheelForStep].copy(color = argb)
+                        persistSequence()
+                        showWheel = false
+                        wheelForStep = -1
+                        if (player.playing) {
+                            AppLog.d(TAG, "restart sequence from step ${player.currentIndex}")
+                            player.start(scope, sequence.toList(), player.currentIndex)
+                        }
+                        return@ColorWheelDialog
+                    }
                     AppLog.d(TAG, "wheel color $r,$g,$b")
                     red = r
                     green = g
@@ -412,8 +426,18 @@ private fun ControlScreen(
                     sendCal(ble,r,g,b)
                     scope.launch { store.setColor(r,g,b) }
                     showWheel = false
+                    wheelForStep = -1
                 },
                 onLive = { r,g,b ->
+                    if (wheelForStep in sequence.indices) {
+                        if (connected) {
+                            player.stop()
+                        }
+                        val argb = AndroidColor.rgb(r,g,b)
+                        sequence[wheelForStep] = sequence[wheelForStep].copy(color = argb)
+                        persistSequence()
+                        return@ColorWheelDialog
+                    }
                     if (connected) {
                         player.stop()
                         sendCal(ble,r,g,b)
@@ -556,18 +580,26 @@ private fun ControlScreen(
             },
             style = MaterialTheme.typography.bodySmall,
         )
-        OutlinedButton(
-            onClick = {
-                if (selected in sequence.indices) {
-                    val argb = AndroidColor.rgb(red, green, blue)
-                    AppLog.d(TAG, "sequence recolor $selected ${hex(argb)}")
-                    sequence[selected] = sequence[selected].copy(color = argb)
-                    persistSequence()
-                }
-            },
-            enabled = selected in sequence.indices,
-        ) {
-            Text("Recolor selected with current RGB")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = {
+                    if (selected in sequence.indices) {
+                        val argb = AndroidColor.rgb(red, green, blue)
+                        AppLog.d(TAG, "sequence recolor $selected ${hex(argb)}")
+                        sequence[selected] = sequence[selected].copy(color = argb)
+                        persistSequence()
+                    }
+                },
+                enabled = selected in sequence.indices,
+            ) {
+                Text("Recolor selected with current RGB")
+            }
+            OutlinedButton(
+                onClick = { if (selected in sequence.indices) { wheelForStep = selected; showWheel = true } },
+                enabled = selected in sequence.indices,
+            ) {
+                Text("Pick color for selected")
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
