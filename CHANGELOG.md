@@ -34,3 +34,16 @@ Dates are based on UTC.
   which the timer relies on
 - keep the link alive with a periodic read, ask for a faster connection
   interval, and retry the first reconnect sooner
+- the color wheel now drives the strip while you drag it, not only on confirm,
+  and picking a plain color or a mode stops the sequence that was running
+- the hold time slider sets every step when nothing is selected, so changing it
+  during a run actually changes the pace instead of only the next color added
+- tap a step in the sequence and pick its color on the wheel, and the steps row
+  scrolls instead of squashing when there are a lot of them
+- presets are editable now: add the current color, replace or remove any swatch,
+  and they persist
+- a calibrate tab runs a short white then orange check and stores per channel
+  gains and a gamma, applied to every color sent and every preview, because this
+  strip's green runs hot and needed about R255 G34 for what should read orange
+- gatt writes are queued and sent one at a time with a retry on a busy reject,
+  which is what the status 201 lines in the log were

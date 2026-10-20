@@ -9,10 +9,16 @@ app is closed source and does not let you cycle a set of colors the way I wanted
 - power on and off
 - brightness and effect speed
 - RGB sliders with a live preview
+- a color wheel that updates the strip as you drag, and a plain color or mode
+  stops any running sequence
 - the 29 built in lighting modes
 - color sequence player: add presets, the current RGB color, or off, give each
-  step its own hold time, and the app alternates them for you
-- remembers your settings and sequence between launches
+  step its own hold time (or set them all at once), tap a step to recolor it on
+  the wheel, and the app alternates them for you
+- editable presets, so the quick swatches are whatever colors you want
+- a calibrate tab that tunes the strip's channel balance and gamma once, then
+  applies it to every color the app sends, so the wheel matches the lights
+- remembers your settings, presets and sequence between launches
 - remembers the last strip and reconnects to it, including after a dropped link
 - clock sync and a timer tab that sets the strip's own on and off times, with a
   weekday repeat, so they fire while the phone is away

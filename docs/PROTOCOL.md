@@ -20,7 +20,10 @@ Pin order does nothing, and the mic command only switches phone audio streaming
 
 Rapid writes were steady: 250 color frames at a 20ms target were all accepted,
 with the stack throttling to about 28ms per frame. The app dwell range is 100 to
-3000ms, so no write queue is needed.
+3000ms, so a firmware side queue is not needed. The app still queues writes on
+its side: on a real device a faster feed (dragging the color wheel) could catch a
+write mid flight and get status 201, which means the stack is busy. One write at
+a time with a short retry clears that up.
 
 ## GATT
 
