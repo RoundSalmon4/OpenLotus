@@ -5,7 +5,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.openlotus.app.color.ColorCal
 import com.openlotus.app.log.AppLog
-import com.openlotus.protocol.Commands
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -56,13 +55,7 @@ class SequencePlayer(private val send: (ByteArray) -> Unit) {
                 currentIndex = index
                 val step = steps[index]
                 AppLog.v(TAG, "tick $index ${hex(step.color)} for ${step.dwellMs}ms")
-                val r = (step.color shr 16) and 0xFF
-                val g = (step.color shr 8) and 0xFF
-                val b = step.color and 0xFF
-                val (cr, cg, cb) = ColorCal.frame(r, g, b)
-                send(
-                    Commands.color(cr, cg, cb),
-                )
+                send(ColorCal.frame((step.color shr 16) and 0xFF, (step.color shr 8) and 0xFF, step.color and 0xFF))
                 delay(step.dwellMs)
                 index = (index + 1) % steps.size
             }

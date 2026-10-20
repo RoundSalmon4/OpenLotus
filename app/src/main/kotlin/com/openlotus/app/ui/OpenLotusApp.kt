@@ -25,11 +25,13 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -85,6 +87,7 @@ import com.openlotus.protocol.Mode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import java.util.Calendar
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -94,16 +97,33 @@ import kotlin.math.sqrt
 
 private const val TAG = "ui"
 
-private val presets = listOf(
-    "Red" to AndroidColor.rgb(255, 0, 0),
-    "Green" to AndroidColor.rgb(0, 255, 0),
-    "Blue" to AndroidColor.rgb(0, 0, 255),
-    "Cyan" to AndroidColor.rgb(0, 255, 255),
-    "Yellow" to AndroidColor.rgb(255, 255, 0),
-    "Purple" to AndroidColor.rgb(160, 0, 255),
-    "White" to AndroidColor.rgb(255, 255, 255),
-    "Warm" to AndroidColor.rgb(255, 160, 60),
+private fun defaultPresetList() = listOf(
+    AndroidColor.rgb(255,0,0),
+    AndroidColor.rgb(0,255,0),
+    AndroidColor.rgb(0,0,255),
+    AndroidColor.rgb(0,255,255),
+    AndroidColor.rgb(255,255,0),
+    AndroidColor.rgb(160,0,255),
+    AndroidColor.rgb(255,255,255),
+    AndroidColor.rgb(255,160,60),
 )
+private fun presetsToJson(list: List<Int>): String {
+    val arr = org.json.JSONArray()
+    list.forEach { arr.put(it) }
+    return arr.toString()
+}
+private fun jsonToPresets(json: String): MutableList<Int> {
+    if (json.isBlank()) return defaultPresetList().toMutableList()
+    return try {
+        val arr = org.json.JSONArray(json)
+        val list = mutableListOf<Int>()
+        for (i in 0 until arr.length()) list.add(arr.getInt(i))
+        if (list.isEmpty()) defaultPresetList().toMutableList() else list
+    } catch (e: Exception) {
+        AppLog.e(TAG, "parse presets failed ${e.message}")
+        defaultPresetList().toMutableList()
+    }
+}
 
 @Composable
 fun OpenLotusApp() {
@@ -207,12 +227,18 @@ fun OpenLotusApp() {
                 onClick = { AppLog.d(TAG, "tab log"); tab = 3 },
                 text = { Text("Log") },
             )
+            Tab(
+                selected = tab == 4,
+                onClick = { AppLog.d(TAG, "tab calibrate"); tab = 4 },
+                text = { Text("Calibrate") },
+            )
         }
         when (tab) {
             0 -> DeviceScreen(ble)
             1 -> ControlScreen(ble, player, scope, store)
             2 -> TimerScreen(ble, scope, store)
-            else -> LogScreen()
+            3 -> LogScreen()
+            else -> CalibrateScreen(ble, scope, store)
         }
     }
 }
@@ -282,7 +308,7 @@ private val sequenceSaver = listSaver<MutableList<SequenceStep>, Int>(
 )
 
 
-private fun sendCal(ble: BleManager, r:Int,g:Int,b:Int){ val (cr,cg,cb)=ColorCal.frame(r,g,b); ble.send(Commands.color(cr,cg,cb)) }
+private fun sendCal(ble: BleManager, r:Int,g:Int,b:Int){ val (cr,cg,cb)=ColorCal.apply(r,g,b); ble.send(Commands.color(cr,cg,cb)) }
 @Composable
 private fun ControlScreen(
     ble: BleManager,
@@ -304,12 +330,15 @@ private fun ControlScreen(
     var seeded by rememberSaveable { mutableStateOf(false) }
     var showWheel by rememberSaveable { mutableStateOf(false) }
     var wheelForStep by rememberSaveable { mutableStateOf(-1) }
+    var showPresetEditor by rememberSaveable { mutableStateOf(false) }
+    val presetColors = remember { mutableStateListOf<Int>() }
+    var lastWheelSend by remember { mutableStateOf(0L) }
 
     LaunchedEffect(Unit) {
         if (seeded) return@LaunchedEffect
         val loaded = store.settingsFlow.first()
         AppLog.d(TAG, "seeding controls from saved settings")
-        ColorCal.set(Calibration(loaded.calRedGain, loaded.calGreenGain, loaded.calBlueGain, loaded.calGamma))
+        ColorCal.current = Calibration(loaded.calRedGain, loaded.calGreenGain, loaded.calBlueGain, loaded.calGamma)
         brightness = loaded.brightness
         speed = loaded.speed
         red = loaded.red
@@ -320,6 +349,8 @@ private fun ControlScreen(
         selected = -1
         sequence.clear()
         sequence.addAll(jsonToSequence(loaded.sequenceJson).map { SequenceStep(it.first, it.second.toLong()) })
+        presetColors.clear()
+        presetColors.addAll(jsonToPresets(loaded.presetColors))
         seeded = true
     }
 
@@ -399,53 +430,63 @@ private fun ControlScreen(
             style = MaterialTheme.typography.bodySmall,
         )
         if (showWheel) {
+            val editingStep = wheelForStep in sequence.indices
             ColorWheelDialog(
-                initialRed = if (wheelForStep in sequence.indices) AndroidColor.red(sequence[wheelForStep].color) else red,
-                initialGreen = if (wheelForStep in sequence.indices) AndroidColor.green(sequence[wheelForStep].color) else green,
-                initialBlue = if (wheelForStep in sequence.indices) AndroidColor.blue(sequence[wheelForStep].color) else blue,
+                initialRed = if (editingStep) AndroidColor.red(sequence[wheelForStep].color) else red,
+                initialGreen = if (editingStep) AndroidColor.green(sequence[wheelForStep].color) else green,
+                initialBlue = if (editingStep) AndroidColor.blue(sequence[wheelForStep].color) else blue,
                 onDismiss = { showWheel = false; wheelForStep = -1 },
                 onConfirm = { r, g, b ->
-                    if (wheelForStep in sequence.indices) {
-                        val argb = AndroidColor.rgb(r,g,b)
+                    if (editingStep) {
+                        val argb = AndroidColor.rgb(r, g, b)
                         AppLog.d(TAG, "sequence recolor $wheelForStep ${hex(argb)}")
                         sequence[wheelForStep] = sequence[wheelForStep].copy(color = argb)
                         persistSequence()
-                        showWheel = false
-                        wheelForStep = -1
                         if (player.playing) {
                             AppLog.d(TAG, "restart sequence from step ${player.currentIndex}")
                             player.start(scope, sequence.toList(), player.currentIndex)
                         }
-                        return@ColorWheelDialog
+                    } else {
+                        AppLog.d(TAG, "wheel color $r,$g,$b")
+                        red = r
+                        green = g
+                        blue = b
+                        player.stop()
+                        sendCal(ble, r, g, b)
+                        scope.launch { store.setColor(r, g, b) }
                     }
-                    AppLog.d(TAG, "wheel color $r,$g,$b")
-                    red = r
-                    green = g
-                    blue = b
-                    player.stop()
-                    sendCal(ble,r,g,b)
-                    scope.launch { store.setColor(r,g,b) }
                     showWheel = false
                     wheelForStep = -1
                 },
-                onLive = { r,g,b ->
-                    if (wheelForStep in sequence.indices) {
-                        if (connected) {
-                            player.stop()
-                        }
-                        val argb = AndroidColor.rgb(r,g,b)
-                        sequence[wheelForStep] = sequence[wheelForStep].copy(color = argb)
+                onLive = { r, g, b ->
+                    AppLog.t(TAG, "wheel live $r,$g,$b")
+                    if (editingStep) {
+                        sequence[wheelForStep] = sequence[wheelForStep].copy(color = AndroidColor.rgb(r, g, b))
                         persistSequence()
-                        return@ColorWheelDialog
+                    } else {
+                        red = r
+                        green = g
+                        blue = b
                     }
                     if (connected) {
-                        player.stop()
-                        sendCal(ble,r,g,b)
+                        val now = System.currentTimeMillis()
+                        if (now - lastWheelSend > 80L) {
+                            lastWheelSend = now
+                            player.stop()
+                            sendCal(ble, r, g, b)
+                        }
                     }
-                    red = r
-                    green = g
-                    blue = b
                 },
+            )
+        }
+        if (showPresetEditor) {
+            PresetEditorDialog(
+                presets = presetColors,
+                onDismiss = { showPresetEditor = false },
+                onChange = {
+                    scope.launch { store.setPresetColors(presetsToJson(presetColors)) }
+                },
+                currentRgb = { AndroidColor.rgb(red, green, blue) },
             )
         }
         LabeledSlider("Red $red", red.toFloat(), 0f..255f, connected, { red = it.toInt() }, {
@@ -493,8 +534,9 @@ private fun ControlScreen(
             "Tap presets to add them, then tap a swatch to give it its own hold time.",
             style = MaterialTheme.typography.bodySmall,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            presets.forEach { (name, argb) ->
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
+            items(presetColors.size) { i ->
+                val argb = presetColors[i]
                 Box(
                     modifier = Modifier
                         .size(28.dp)
@@ -502,12 +544,28 @@ private fun ControlScreen(
                         .background(Color(argb))
                         .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
                         .clickable {
-                            AppLog.d(TAG, "sequence add $name")
+                            AppLog.d(TAG, "sequence add preset ${hex(argb)}")
                             sequence.add(SequenceStep(argb, defaultDwell.toLong()))
                             selected = sequence.lastIndex
                             persistSequence()
                         },
                 )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                AppLog.d(TAG, "open preset editor")
+                showPresetEditor = true
+            }) {
+                Text("Edit presets")
+            }
+            OutlinedButton(onClick = {
+                val argb = AndroidColor.rgb(red, green, blue)
+                AppLog.d(TAG, "add preset ${hex(argb)}")
+                presetColors.add(argb)
+                scope.launch { store.setPresetColors(presetsToJson(presetColors)) }
+            }) {
+                Text("Add current as preset")
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -752,6 +810,77 @@ private fun LabeledSlider(
 }
 
 @Composable
+private fun PresetEditorDialog(
+    presets: MutableList<Int>,
+    onDismiss: () -> Unit,
+    onChange: () -> Unit,
+    currentRgb: () -> Int,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Edit presets", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Presets are the quick swatches under the sequence. They only change the list here.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (presets.isEmpty()) {
+                    Text("No presets yet", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 240.dp)) {
+                        items(presets.size) { i ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(presets[i]))
+                                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+                                )
+                                Text(hex(presets[i]), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                OutlinedButton(onClick = {
+                                    val argb = currentRgb()
+                                    AppLog.d(TAG, "preset $i replace ${hex(argb)}")
+                                    presets[i] = argb
+                                    onChange()
+                                }) {
+                                    Text("Set current")
+                                }
+                                OutlinedButton(onClick = {
+                                    AppLog.d(TAG, "preset $i remove")
+                                    presets.removeAt(i)
+                                    onChange()
+                                }) {
+                                    Text("Remove")
+                                }
+                            }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        val argb = currentRgb()
+                        AppLog.d(TAG, "preset add ${hex(argb)}")
+                        presets.add(argb)
+                        onChange()
+                    }) {
+                        Text("Add current color")
+                    }
+                    Button(onClick = onDismiss) { Text("Done") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ColorWheelDialog(
     initialRed: Int,
     initialGreen: Int,
@@ -882,8 +1011,145 @@ private fun HsvWheel(hue: Float, saturation: Float, onChange: (Float, Float) -> 
     }
 }
 
-private val weekdayLabels = listOf("M", "T", "W", "T", "F", "S", "S")
+@Composable
+private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: SettingsStore) {
+    AppLog.t(TAG, "CalibrateScreen()")
+    val connected = ble.connectedDevice != null
+    var redGain by rememberSaveable { mutableStateOf(1f) }
+    var greenGain by rememberSaveable { mutableStateOf(1f) }
+    var blueGain by rememberSaveable { mutableStateOf(1f) }
+    var gamma by rememberSaveable { mutableStateOf(1f) }
+    var step by rememberSaveable { mutableStateOf(0) }
+    var seeded by rememberSaveable { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        if (seeded) return@LaunchedEffect
+        val loaded = store.settingsFlow.first()
+        redGain = loaded.calRedGain
+        greenGain = loaded.calGreenGain
+        blueGain = loaded.calBlueGain
+        gamma = loaded.calGamma
+        seeded = true
+    }
+
+    fun baseFor(s: Int): Triple<Int, Int, Int> =
+        if (s == 0) Triple(255, 255, 255) else Triple(255, 128, 0)
+
+    fun preview() {
+        ColorCal.current = Calibration(redGain, greenGain, blueGain, gamma)
+        val (r, g, b) = baseFor(step)
+        if (connected) {
+            AppLog.d(TAG, "cal preview base=${hex(AndroidColor.rgb(r, g, b))} out=${hex(ColorCal.packed(r, g, b))}")
+            ble.send(ColorCal.frame(r, g, b))
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (!connected) {
+            Text("Connect to a strip first.", style = MaterialTheme.typography.bodyMedium)
+        }
+        Text("Calibrate the strip", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "The strip's channels are not balanced, so the wheel can look off. " +
+                "Fix it once here and every color you send is corrected.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            if (step == 0) {
+                "Step 1 of 2: white balance. The strip is showing plain white. Lower a channel until it looks neutral white, then tap Next."
+            } else {
+                "Step 2 of 2: orange check. The strip is showing orange. Adjust until it looks like a true orange, then tap Save."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        LabeledSlider(
+            label = "Red gain ${"%.2f".format(redGain)}",
+            value = redGain,
+            range = 0.05f..2f,
+            enabled = true,
+            onChange = { redGain = it },
+            onFinished = { preview() },
+        )
+        LabeledSlider(
+            label = "Green gain ${"%.2f".format(greenGain)}",
+            value = greenGain,
+            range = 0.05f..2f,
+            enabled = true,
+            onChange = { greenGain = it },
+            onFinished = { preview() },
+        )
+        LabeledSlider(
+            label = "Blue gain ${"%.2f".format(blueGain)}",
+            value = blueGain,
+            range = 0.05f..2f,
+            enabled = true,
+            onChange = { blueGain = it },
+            onFinished = { preview() },
+        )
+        LabeledSlider(
+            label = "Gamma ${"%.2f".format(gamma)}",
+            value = gamma,
+            range = 0.5f..2f,
+            enabled = true,
+            onChange = { gamma = it },
+            onFinished = { preview() },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = {
+                    AppLog.d(TAG, "cal preview pressed step=$step")
+                    preview()
+                },
+                enabled = connected,
+            ) {
+                Text(if (step == 0) "Show white" else "Show orange")
+            }
+            OutlinedButton(onClick = {
+                AppLog.d(TAG, "cal reset pressed")
+                redGain = 1f
+                greenGain = 1f
+                blueGain = 1f
+                gamma = 1f
+                preview()
+            }) {
+                Text("Reset")
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (step == 0) {
+                Button(onClick = {
+                    AppLog.d(TAG, "cal step 2")
+                    step = 1
+                    preview()
+                }) { Text("Next") }
+            } else {
+                OutlinedButton(onClick = {
+                    AppLog.d(TAG, "cal back to step 1")
+                    step = 0
+                    preview()
+                }) { Text("Back") }
+                Button(onClick = {
+                    ColorCal.current = Calibration(redGain, greenGain, blueGain, gamma)
+                    AppLog.d(TAG, "save calibration r=$redGain g=$greenGain b=$blueGain gamma=$gamma")
+                    scope.launch { store.setCalibration(redGain, greenGain, blueGain, gamma) }
+                }) { Text("Save") }
+            }
+        }
+        Text(
+            "Current: red ${"%.2f".format(redGain)} green ${"%.2f".format(greenGain)} " +
+                "blue ${"%.2f".format(blueGain)} gamma ${"%.2f".format(gamma)}",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+private val weekdayLabels = listOf("M", "T", "W", "T", "F", "S", "S")
 @Composable
 private fun TimerScreen(ble: BleManager, scope: CoroutineScope, store: SettingsStore) {
     AppLog.t(TAG, "TimerScreen()")
