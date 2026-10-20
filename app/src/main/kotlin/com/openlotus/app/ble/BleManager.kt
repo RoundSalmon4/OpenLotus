@@ -265,8 +265,6 @@ class BleManager(private val context: Context) {
                 }
                 main.postDelayed(this, KEEPALIVE_MS)
             }
-                main.postDelayed(this, KEEPALIVE_MS)
-            }
         }
         keepaliveRunnable = runnable
         main.postDelayed(runnable, KEEPALIVE_MS)
@@ -277,10 +275,6 @@ class BleManager(private val context: Context) {
         keepaliveRunnable?.let { main.removeCallbacks(it) }
         keepaliveRunnable = null
     }
-
-    private var reconnectAttempts = 0
-    private var keepaliveRunnable: Runnable? = null
-    private var lastWriteAt = 0L
 
     @Suppress("DEPRECATION")
     fun send(frame: ByteArray) {
