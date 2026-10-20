@@ -75,6 +75,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.openlotus.app.ble.BleDevice
 import com.openlotus.app.ble.BleManager
+import com.openlotus.app.color.Calibration
+import com.openlotus.app.color.ColorCal
 import com.openlotus.app.data.SettingsStore
 import com.openlotus.app.log.AppLog
 import com.openlotus.protocol.Commands
@@ -279,6 +281,8 @@ private val sequenceSaver = listSaver<MutableList<SequenceStep>, Int>(
     },
 )
 
+
+private fun sendCal(ble: BleManager, r:Int,g:Int,b:Int){ val (cr,cg,cb)=ColorCal.frame(r,g,b); ble.send(Commands.color(cr,cg,cb)) }
 @Composable
 private fun ControlScreen(
     ble: BleManager,
@@ -403,25 +407,25 @@ private fun ControlScreen(
                     red = r
                     green = g
                     blue = b
-                    ble.send(Commands.color(r, g, b))
-                    scope.launch { store.setColor(r, g, b) }
+                    sendCal(ble,r,g,b)
+                    scope.launch { store.setColor(r,g,b) }
                     showWheel = false
                 },
             )
         }
         LabeledSlider("Red $red", red.toFloat(), 0f..255f, connected, { red = it.toInt() }, {
             AppLog.d(TAG, "color $red,$green,$blue")
-            ble.send(Commands.color(red, green, blue))
+            sendCal(ble,red,green,blue)
             scope.launch { store.setColor(red, green, blue) }
         })
         LabeledSlider("Green $green", green.toFloat(), 0f..255f, connected, { green = it.toInt() }, {
             AppLog.d(TAG, "color $red,$green,$blue")
-            ble.send(Commands.color(red, green, blue))
+            sendCal(ble,red,green,blue)
             scope.launch { store.setColor(red, green, blue) }
         })
         LabeledSlider("Blue $blue", blue.toFloat(), 0f..255f, connected, { blue = it.toInt() }, {
             AppLog.d(TAG, "color $red,$green,$blue")
-            ble.send(Commands.color(red, green, blue))
+            sendCal(ble,red,green,blue)
             scope.launch { store.setColor(red, green, blue) }
         })
 
