@@ -10,8 +10,13 @@ power, color, brightness, modes and speed. The legacy dialect also worked for
 power and color, so this strip accepts both. Frames went out as plaintext 9 byte
 frames and the encrypted path was not needed. The strip exposes a read and
 notify characteristic at `0000fff4` that sends `12 13 14` on connect and then
-stays quiet. Color temperature, pin order, mic and schedule are not confirmed
-yet.
+stays quiet.
+
+A second session in a dark room confirmed the timer and mapped the rest. The
+timer fires to the minute. The "color temperature" frame is not a warm/cold
+balance on this unit: its first byte drives green and its second a cool white.
+Pin order does nothing, and the mic command only switches phone audio streaming
+(the strip has no microphone of its own), so all three stay out of the app.
 
 Rapid writes were steady: 250 color frames at a 20ms target were all accepted,
 with the stack throttling to about 28ms per frame. The app dwell range is 100 to
@@ -98,7 +103,8 @@ same as the stock app's `Time.weekDay`.
 
 This came from the stock app's `TimingFragment`, which also reads the timers back
 by reading the command characteristic and parsing the same `7E 08 82 ...` frame.
-Not confirmed on hardware yet.
+Confirmed on hardware: an on timer and an off timer both fired to the minute. The
+individual weekday bits are still unverified, the test used every day.
 
 ## Encrypted variant
 

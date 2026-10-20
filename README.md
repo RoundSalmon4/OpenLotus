@@ -14,21 +14,23 @@ app is closed source and does not let you cycle a set of colors the way I wanted
   step its own hold time, and the app alternates them for you
 - remembers your settings and sequence between launches
 - remembers the last strip and reconnects to it, including after a dropped link
-- clock sync for the strip's timer feature
+- clock sync and a timer tab that sets the strip's own on and off times, with a
+  weekday repeat, so they fire while the phone is away
 - a log tab that shows what the app sent, so you can troubleshoot without a cable
 
 No internet permission. The app talks to the strip and nothing else.
 
 ## Status
 
-Early, but the main frames are now checked on real hardware. On an ELK-BLEDDM D7
+Early, but the main frames are checked on real hardware. On an ELK-BLEDDM D7
 the stock dialect worked for power, color, brightness, modes and speed, and the
 legacy dialect worked too, so both are in. Plaintext frames were enough, no
-encryption needed. Details in docs/PROTOCOL.md.
+encryption needed. The strip's own on/off timer was confirmed too, so the timer
+tab stays. Details in docs/PROTOCOL.md.
 
-Not wired into the UI yet: schedules, mic/music mode, laser controls and channel
-order (pin sequence). These have frames but no confirmed hardware test behind
-them.
+Still out of the UI, because they do nothing useful on this unit: the color
+temperature frame is not a warm/cold control here, pin order has no effect, and
+mic mode only drives phone audio streaming. Laser controls are untested.
 
 ## Build
 
