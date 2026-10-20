@@ -128,6 +128,8 @@ class SettingsStore(private val context: Context) {
         AppLog.d(TAG, "setPresetColors len=${json.length}")
         context.dataStore.edit { it[Keys.presetColors] = json }
     }
+
+    suspend fun setCalibration(redGain: Float, greenGain: Float, blueGain: Float, gamma: Float) {
         AppLog.d(TAG, "setCalibration r=$redGain g=$greenGain b=$blueGain gamma=$gamma")
         context.dataStore.edit {
             it[Keys.calRedGain] = redGain
@@ -136,6 +138,8 @@ class SettingsStore(private val context: Context) {
             it[Keys.calGamma] = gamma
         }
     }
+
+    suspend fun setTimer(on: Boolean, enabled: Boolean, hour: Int, minute: Int, weeks: Int) {
         val h = hour.coerceIn(0, 23)
         val m = minute.coerceIn(0, 59)
         val w = weeks and 0xFF
