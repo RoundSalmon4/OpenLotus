@@ -517,8 +517,9 @@ private fun ControlScreen(
         if (sequence.isEmpty()) {
             Text("No colors yet", style = MaterialTheme.typography.bodySmall)
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                sequence.forEachIndexed { index, step ->
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
+                items(sequence.size) { index ->
+                    val step = sequence[index]
                     val active = player.playing && player.currentIndex == index
                     val isSelected = selected == index
                     Box(
