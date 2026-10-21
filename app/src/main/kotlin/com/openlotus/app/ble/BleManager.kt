@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
@@ -39,6 +40,8 @@ class BleManager(private val context: Context) {
 
         private val SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
         private val CHAR_UUID: UUID = UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb")
+        private val NOTIFY_UUID: UUID = UUID.fromString("0000fff4-0000-1000-8000-00805f9b34fb")
+        private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
         private val NAME_PREFIXES = listOf("ELK-", "ELK~", "ELK_", "CLK-", "XSL-", "LED LIGHT STRIP")
 
@@ -447,6 +450,31 @@ class BleManager(private val context: Context) {
                 AppLog.e(TAG, "requestConnectionPriority denied", e)
             }
             startKeepalive()
+
+            // Watch the notify side too. The notes say it only sends 12 13 14 on
+            // connect, but logging anything it does send is how we find out if the
+            // strip ever reports state.
+            val notify = service?.getCharacteristic(NOTIFY_UUID)
+            if (notify == null) {
+                AppLog.d(TAG, "notify characteristic $NOTIFY_UUID not found")
+            } else {
+                try {
+                    val enabled = gatt.setCharacteristicNotification(notify, true)
+                    AppLog.d(TAG, "subscribe $NOTIFY_UUID setCharacteristicNotification=$enabled")
+                    val descriptor = notify.getDescriptor(CCCD_UUID)
+                    if (descriptor == null) {
+                        AppLog.d(TAG, "notify has no CCCD")
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                    } else {
+                        descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                        gatt.writeDescriptor(descriptor)
+                    }
+                } catch (e: SecurityException) {
+                    AppLog.e(TAG, "subscribe denied", e)
+                }
+            }
+
             updateStatus("Connected")
         }
 
@@ -460,6 +488,22 @@ class BleManager(private val context: Context) {
                 onWriteFinished()
                 pumpWrites()
             }
+        }
+
+        @Suppress("DEPRECATION")
+        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+            val value = characteristic.value ?: ByteArray(0)
+            AppLog.d(TAG, "notify ${characteristic.uuid} ${Frame.hex(value)}")
+        }
+
+        @Suppress("DEPRECATION")
+        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            val value = characteristic.value ?: ByteArray(0)
+            AppLog.d(TAG, "read ${characteristic.uuid} status $status ${Frame.hex(value)}")
+        }
+
+        override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+            AppLog.d(TAG, "descriptor write ${descriptor.uuid} status $status")
         }
     }
 }
