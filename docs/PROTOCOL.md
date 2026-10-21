@@ -33,6 +33,17 @@ a time with a short retry clears that up.
 Writes go out as write without response when the characteristic supports it.
 The stock app requests an MTU of 63 after service discovery.
 
+## Readback
+
+There is a notify characteristic at `0000fff4-0000-1000-8000-00805f9b34fb`. On
+connect it sends `12 13 14` once and then goes quiet; it did not react to any
+command. The stock app reads timers back by reading the command characteristic
+`0000fff3` and parsing the same `7E 08 82 ...` frame, so a read there does return
+state. Whether the current color is readable that way is not confirmed on this
+unit. The app now subscribes to the notify side and logs the keepalive read
+bytes, so a capture can settle it. Do not build color calibration on a readback
+until that is seen.
+
 ## Frame
 
 Every command is 9 bytes:

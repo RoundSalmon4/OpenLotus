@@ -47,3 +47,12 @@ Dates are based on UTC.
   strip's green runs hot and needed about R255 G34 for what should read orange
 - gatt writes are queued and sent one at a time with a retry on a busy reject,
   which is what the status 201 lines in the log were
+- the calibrate tab is a real wizard now: three guided steps (balance the white
+  with cast buttons, match the dim level, then walk nine reference colors), each
+  cue is a tap instead of a number to guess, and the manual sliders moved behind
+  a toggle with a plain explanation of what every one does
+- the tabs scroll, so the calibrate label stopped wrapping on a narrow screen
+- one loader now feeds the saved calibration into the whole app, so the
+  correction reaches the controls and the sequence from one place
+- subscribed to the fff4 notify side and log the keepalive read bytes, so the
+  next capture can say whether the strip reports any state worth reading back
