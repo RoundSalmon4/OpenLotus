@@ -1219,6 +1219,11 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
+                    "This checks the hue. Step 2 already set the dim end, so ignore small " +
+                        "brightness differences.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
                     "Patch ${patchIndex + 1} of ${patches.size}: ${patches[patchIndex].first}",
                     style = MaterialTheme.typography.titleSmall,
                 )
