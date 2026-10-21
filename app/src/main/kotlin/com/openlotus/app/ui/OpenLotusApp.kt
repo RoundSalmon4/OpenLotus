@@ -43,10 +43,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -135,6 +135,21 @@ fun OpenLotusApp() {
     val player = remember { SequencePlayer { frame -> ble.send(frame) } }
     var tab by rememberSaveable { mutableStateOf(0) }
 
+    // One place loads the saved calibration and pushes it into ColorCal, so every
+    // send and every preview, in any tab, sees the same correction.
+    LaunchedEffect(Unit) {
+        store.settingsFlow.collect { s ->
+            val cal = Calibration(s.calRedGain, s.calGreenGain, s.calBlueGain, s.calGamma)
+            if (cal != ColorCal.current) {
+                AppLog.d(
+                    TAG,
+                    "calibration loaded r=${s.calRedGain} g=${s.calGreenGain} b=${s.calBlueGain} gamma=${s.calGamma}",
+                )
+                ColorCal.current = cal
+            }
+        }
+    }
+
     val permissions = remember {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
@@ -206,31 +221,31 @@ fun OpenLotusApp() {
                 },
             )
         }
-        TabRow(selectedTabIndex = tab) {
+        ScrollableTabRow(selectedTabIndex = tab) {
             Tab(
                 selected = tab == 0,
                 onClick = { AppLog.d(TAG, "tab devices"); tab = 0 },
-                text = { Text("Devices") },
+                text = { Text("Devices", maxLines = 1) },
             )
             Tab(
                 selected = tab == 1,
                 onClick = { AppLog.d(TAG, "tab control"); tab = 1 },
-                text = { Text("Control") },
+                text = { Text("Control", maxLines = 1) },
             )
             Tab(
                 selected = tab == 2,
                 onClick = { AppLog.d(TAG, "tab timer"); tab = 2 },
-                text = { Text("Timer") },
+                text = { Text("Timer", maxLines = 1) },
             )
             Tab(
                 selected = tab == 3,
                 onClick = { AppLog.d(TAG, "tab log"); tab = 3 },
-                text = { Text("Log") },
+                text = { Text("Log", maxLines = 1) },
             )
             Tab(
                 selected = tab == 4,
                 onClick = { AppLog.d(TAG, "tab calibrate"); tab = 4 },
-                text = { Text("Calibrate") },
+                text = { Text("Calibrate", maxLines = 1) },
             )
         }
         when (tab) {
@@ -338,7 +353,6 @@ private fun ControlScreen(
         if (seeded) return@LaunchedEffect
         val loaded = store.settingsFlow.first()
         AppLog.d(TAG, "seeding controls from saved settings")
-        ColorCal.current = Calibration(loaded.calRedGain, loaded.calGreenGain, loaded.calBlueGain, loaded.calGamma)
         brightness = loaded.brightness
         speed = loaded.speed
         red = loaded.red
@@ -1019,7 +1033,9 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
     var greenGain by rememberSaveable { mutableStateOf(1f) }
     var blueGain by rememberSaveable { mutableStateOf(1f) }
     var gamma by rememberSaveable { mutableStateOf(1f) }
-    var step by rememberSaveable { mutableStateOf(0) }
+    var stage by rememberSaveable { mutableStateOf(0) }
+    var patchIndex by rememberSaveable { mutableStateOf(0) }
+    var showAdvanced by rememberSaveable { mutableStateOf(false) }
     var seeded by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -1032,16 +1048,47 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
         seeded = true
     }
 
-    fun baseFor(s: Int): Triple<Int, Int, Int> =
-        if (s == 0) Triple(255, 255, 255) else Triple(255, 128, 0)
+    val patches = listOf(
+        "White" to Triple(255, 255, 255),
+        "Gray" to Triple(128, 128, 128),
+        "Red" to Triple(255, 0, 0),
+        "Green" to Triple(0, 255, 0),
+        "Blue" to Triple(0, 0, 255),
+        "Yellow" to Triple(255, 255, 0),
+        "Cyan" to Triple(0, 255, 255),
+        "Magenta" to Triple(255, 0, 255),
+        "Orange" to Triple(255, 128, 0),
+    )
 
-    fun preview() {
+    val target: Triple<Int, Int, Int> = when (stage) {
+        0 -> Triple(255, 255, 255)
+        1 -> Triple(64, 64, 64)
+        2 -> patches[patchIndex.coerceIn(0, patches.lastIndex)].second
+        else -> Triple(255, 255, 255)
+    }
+
+    fun applyCal() {
         ColorCal.current = Calibration(redGain, greenGain, blueGain, gamma)
-        val (r, g, b) = baseFor(step)
+    }
+
+    fun sendTarget() {
+        applyCal()
+        val (r, g, b) = target
         if (connected) {
-            AppLog.d(TAG, "cal preview base=${hex(AndroidColor.rgb(r, g, b))} out=${hex(ColorCal.packed(r, g, b))}")
+            AppLog.d(TAG, "cal target ${hex(AndroidColor.rgb(r, g, b))} -> out ${hex(ColorCal.packed(r, g, b))}")
             ble.send(ColorCal.frame(r, g, b))
         }
+    }
+
+    fun nudge(scaleR: Float, scaleG: Float, scaleB: Float) {
+        redGain = (redGain * scaleR).coerceIn(0.05f, 2f)
+        greenGain = (greenGain * scaleG).coerceIn(0.05f, 2f)
+        blueGain = (blueGain * scaleB).coerceIn(0.05f, 2f)
+        sendTarget()
+    }
+
+    LaunchedEffect(stage, patchIndex, connected) {
+        if (connected) sendTarget()
     }
 
     Column(
@@ -1056,91 +1103,209 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
         }
         Text("Calibrate the strip", style = MaterialTheme.typography.titleSmall)
         Text(
-            "The strip's channels are not balanced, so the wheel can look off. " +
-                "Fix it once here and every color you send is corrected.",
+            "This strip's red, green and blue are not even, so the same numbers can " +
+                "look wrong. You tune it once by eye here, and then every color the app " +
+                "sends, plus the sequence, is corrected to match what you picked.",
             style = MaterialTheme.typography.bodySmall,
         )
+
         Text(
-            if (step == 0) {
-                "Step 1 of 2: white balance. The strip is showing plain white. Lower a channel until it looks neutral white, then tap Next."
-            } else {
-                "Step 2 of 2: orange check. The strip is showing orange. Adjust until it looks like a true orange, then tap Save."
-            },
-            style = MaterialTheme.typography.bodyMedium,
+            "Keep looking at the strip. It runs the steps for you, so most of this is " +
+                "just tapping the button that matches what you see.",
+            style = MaterialTheme.typography.bodySmall,
         )
-        LabeledSlider(
-            label = "Red gain ${"%.2f".format(redGain)}",
-            value = redGain,
-            range = 0.05f..2f,
-            enabled = true,
-            onChange = { redGain = it },
-            onFinished = { preview() },
+
+        // The reference the user matches against. It is the color we asked for, not
+        // the corrected one, because the phone screen is already accurate.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(72.dp)
+                .clip(MaterialTheme.shapes.small)
+                .background(Color(AndroidColor.rgb(target.first, target.second, target.third)))
+                .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "Match the light to this",
+                color = if (target.first + target.second + target.third > 380) Color.Black else Color.White,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+        Text(
+            "Sending ${hex(AndroidColor.rgb(target.first, target.second, target.third))} " +
+                "as ${hex(ColorCal.packed(target.first, target.second, target.third))} after correction",
+            style = MaterialTheme.typography.bodySmall,
         )
-        LabeledSlider(
-            label = "Green gain ${"%.2f".format(greenGain)}",
-            value = greenGain,
-            range = 0.05f..2f,
-            enabled = true,
-            onChange = { greenGain = it },
-            onFinished = { preview() },
-        )
-        LabeledSlider(
-            label = "Blue gain ${"%.2f".format(blueGain)}",
-            value = blueGain,
-            range = 0.05f..2f,
-            enabled = true,
-            onChange = { blueGain = it },
-            onFinished = { preview() },
-        )
-        LabeledSlider(
-            label = "Gamma ${"%.2f".format(gamma)}",
-            value = gamma,
-            range = 0.5f..2f,
-            enabled = true,
-            onChange = { gamma = it },
-            onFinished = { preview() },
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = {
-                    AppLog.d(TAG, "cal preview pressed step=$step")
-                    preview()
-                },
-                enabled = connected,
-            ) {
-                Text(if (step == 0) "Show white" else "Show orange")
+
+        HorizontalDivider()
+
+        when (stage) {
+            0 -> {
+                Text("Step 1 of 3: make the white neutral", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "The strip is showing plain white. Look at it and tap the one that " +
+                        "fits. Each tap nudges it a little, so tap a few times until it " +
+                        "looks like a clean white with no color tint.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { AppLog.d(TAG, "cal cast green"); nudge(1f, 0.85f, 1f) }) {
+                        Text("Too green")
+                    }
+                    OutlinedButton(onClick = { AppLog.d(TAG, "cal cast red"); nudge(0.85f, 1f, 1f) }) {
+                        Text("Too red or pink")
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { AppLog.d(TAG, "cal cast blue"); nudge(1f, 1f, 0.85f) }) {
+                        Text("Too blue")
+                    }
+                    OutlinedButton(onClick = { AppLog.d(TAG, "cal cast yellow"); nudge(0.9f, 0.9f, 1f) }) {
+                        Text("Too yellow")
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        AppLog.d(TAG, "cal reset")
+                        redGain = 1f
+                        greenGain = 1f
+                        blueGain = 1f
+                        gamma = 1f
+                        sendTarget()
+                    }) { Text("Reset") }
+                    Button(
+                        onClick = { AppLog.d(TAG, "cal to step 2"); stage = 1 },
+                        enabled = connected,
+                    ) { Text("It is white now") }
+                }
             }
-            OutlinedButton(onClick = {
-                AppLog.d(TAG, "cal reset pressed")
-                redGain = 1f
-                greenGain = 1f
-                blueGain = 1f
-                gamma = 1f
-                preview()
-            }) {
-                Text("Reset")
+            1 -> {
+                Text("Step 2 of 3: match the dim level", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "The strip is showing a dim gray. If it looks brighter than the patch, " +
+                        "tap darker. If it looks dimmer, tap brighter. This sets the gamma " +
+                        "curve.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        AppLog.d(TAG, "cal dim brighter")
+                        gamma = (gamma * 0.9f).coerceIn(0.5f, 2f)
+                        sendTarget()
+                    }) { Text("Brighter") }
+                    OutlinedButton(onClick = {
+                        AppLog.d(TAG, "cal dim darker")
+                        gamma = (gamma * 1.1f).coerceIn(0.5f, 2f)
+                        sendTarget()
+                    }) { Text("Darker") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { AppLog.d(TAG, "cal back to step 1"); stage = 0 }) {
+                        Text("Back")
+                    }
+                    Button(
+                        onClick = { AppLog.d(TAG, "cal to step 3"); patchIndex = 0; stage = 2 },
+                        enabled = connected,
+                    ) { Text("It matches") }
+                }
+            }
+            2 -> {
+                Text("Step 3 of 3: check the colors", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "The strip now walks through reference colors. Tap Next if the light " +
+                        "matches the patch, or go back to the white step if a color looks " +
+                        "off.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "Patch ${patchIndex + 1} of ${patches.size}: ${patches[patchIndex].first}",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { patchIndex = (patchIndex - 1 + patches.size) % patches.size },
+                    ) { Text("Previous") }
+                    if (patchIndex < patches.lastIndex) {
+                        OutlinedButton(
+                            onClick = { patchIndex += 1 },
+                        ) { Text("Next") }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { AppLog.d(TAG, "cal back to white"); stage = 0 }) {
+                        Text("Back to white")
+                    }
+                    Button(onClick = {
+                        applyCal()
+                        AppLog.d(TAG, "save calibration r=$redGain g=$greenGain b=$blueGain gamma=$gamma")
+                        scope.launch { store.setCalibration(redGain, greenGain, blueGain, gamma) }
+                        stage = 3
+                    }) { Text("Save calibration") }
+                }
+            }
+            else -> {
+                Text("Saved", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Done. The correction is applied to colors you pick and to the " +
+                        "sequence. Note that the built in modes and brightness are the " +
+                        "strip's own effects, so they are not corrected.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Button(onClick = { AppLog.d(TAG, "cal run again"); stage = 0; patchIndex = 0 }) {
+                    Text("Run it again")
+                }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (step == 0) {
-                Button(onClick = {
-                    AppLog.d(TAG, "cal step 2")
-                    step = 1
-                    preview()
-                }) { Text("Next") }
-            } else {
-                OutlinedButton(onClick = {
-                    AppLog.d(TAG, "cal back to step 1")
-                    step = 0
-                    preview()
-                }) { Text("Back") }
-                Button(onClick = {
-                    ColorCal.current = Calibration(redGain, greenGain, blueGain, gamma)
-                    AppLog.d(TAG, "save calibration r=$redGain g=$greenGain b=$blueGain gamma=$gamma")
-                    scope.launch { store.setCalibration(redGain, greenGain, blueGain, gamma) }
-                }) { Text("Save") }
-            }
+
+        OutlinedButton(onClick = {
+            AppLog.d(TAG, "cal advanced toggle $showAdvanced")
+            showAdvanced = !showAdvanced
+        }) {
+            Text(if (showAdvanced) "Hide manual sliders" else "Show manual sliders")
         }
+        if (showAdvanced) {
+            Text(
+                "Manual control. Red, green and blue set how strong each channel is: " +
+                    "lower a channel if the light has too much of it. Gamma shapes the " +
+                    "dim end only, leave it at 1.00 unless the white is right but low " +
+                    "levels look off.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            LabeledSlider(
+                label = "Red level ${"%.2f".format(redGain)} (lower if pink or red tinted)",
+                value = redGain,
+                range = 0.05f..2f,
+                enabled = true,
+                onChange = { redGain = it },
+                onFinished = { sendTarget() },
+            )
+            LabeledSlider(
+                label = "Green level ${"%.2f".format(greenGain)} (lower if green or yellow tinted, the usual fix)",
+                value = greenGain,
+                range = 0.05f..2f,
+                enabled = true,
+                onChange = { greenGain = it },
+                onFinished = { sendTarget() },
+            )
+            LabeledSlider(
+                label = "Blue level ${"%.2f".format(blueGain)} (lower if blue or cold tinted)",
+                value = blueGain,
+                range = 0.05f..2f,
+                enabled = true,
+                onChange = { blueGain = it },
+                onFinished = { sendTarget() },
+            )
+            LabeledSlider(
+                label = "Gamma ${"%.2f".format(gamma)} (shapes the dim end, 1.00 is neutral)",
+                value = gamma,
+                range = 0.5f..2f,
+                enabled = true,
+                onChange = { gamma = it },
+                onFinished = { sendTarget() },
+            )
+        }
+
         Text(
             "Current: red ${"%.2f".format(redGain)} green ${"%.2f".format(greenGain)} " +
                 "blue ${"%.2f".format(blueGain)} gamma ${"%.2f".format(gamma)}",
