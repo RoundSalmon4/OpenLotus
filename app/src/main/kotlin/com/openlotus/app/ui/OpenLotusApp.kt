@@ -1052,7 +1052,7 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
     }
 
     // Patch definitions: name -> (target RGB, hint for adjustment)
-    val patches = listOf(
+    val patches: List<Pair<String, Triple<Triple<Int, Int, Int>, String>>> = listOf(
         "White" to Triple(Triple(255, 255, 255), "Adjust white balance in Step 1"),
         "Gray" to Triple(Triple(128, 128, 128), "Adjust gamma in Step 2"),
         "Red" to Triple(Triple(255, 0, 0), "If too orange: lower green. If too pink: lower blue."),
