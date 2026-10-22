@@ -1051,36 +1051,44 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
         seeded = true
     }
 
+    // Patch definitions for calibration wizard
+    @Suppress("UNUSED_PARAMETER")
+    data class CalibrationPatch(
+        val name: String,
+        val target: Triple<Int, Int, Int>,
+        val hint: String,
+    )
+
     // Patch definitions: name -> (target RGB, hint for adjustment)
-    val patches: List<Pair<String, Triple<Triple<Int, Int, Int>, String>>> = listOf(
-        "White" to Triple(Triple(255, 255, 255), "Adjust white balance in Step 1"),
-        "Gray" to Triple(Triple(128, 128, 128), "Adjust gamma in Step 2"),
-        "Red" to Triple(Triple(255, 0, 0), "If too orange: lower green. If too pink: lower blue."),
-        "Green" to Triple(Triple(0, 255, 0), "If too yellow: lower red. If too cyan: lower blue."),
-        "Blue" to Triple(Triple(0, 0, 255), "If too cyan: lower green. If too purple: lower red."),
-        "Yellow" to Triple(Triple(255, 255, 0), "If too green: lower green. If too orange: lower red."),
-        "Cyan" to Triple(Triple(0, 255, 255), "If too green: lower green. If too blue: lower blue."),
-        "Magenta" to Triple(Triple(255, 0, 255), "If too red: lower red. If too blue: lower blue."),
-        "Orange" to Triple(Triple(255, 128, 0), "If too yellow: lower green. If too red: lower red."),
+    val patches = listOf(
+        CalibrationPatch("White", Triple(255, 255, 255), "Adjust white balance in Step 1"),
+        CalibrationPatch("Gray", Triple(128, 128, 128), "Adjust gamma in Step 2"),
+        CalibrationPatch("Red", Triple(255, 0, 0), "If too orange: lower green. If too pink: lower blue."),
+        CalibrationPatch("Green", Triple(0, 255, 0), "If too yellow: lower red. If too cyan: lower blue."),
+        CalibrationPatch("Blue", Triple(0, 0, 255), "If too cyan: lower green. If too purple: lower red."),
+        CalibrationPatch("Yellow", Triple(255, 255, 0), "If too green: lower green. If too orange: lower red."),
+        CalibrationPatch("Cyan", Triple(0, 255, 255), "If too green: lower green. If too blue: lower blue."),
+        CalibrationPatch("Magenta", Triple(255, 0, 255), "If too red: lower red. If too blue: lower blue."),
+        CalibrationPatch("Orange", Triple(255, 128, 0), "If too yellow: lower green. If too red: lower red."),
     )
 
     // Current target color based on stage
     val target: Triple<Int, Int, Int> = when (stage) {
         0 -> Triple(255, 255, 255)
         1 -> Triple(64, 64, 64)
-        2 -> patches[patchIndex.coerceIn(0, patches.lastIndex)].second.first
+        2 -> patches[patchIndex.coerceIn(0, patches.lastIndex)].target
         else -> Triple(255, 255, 255)
     }
 
     // Current patch hint (for step 3)
     val currentPatchHint: String = when (stage) {
-        2 -> patches[patchIndex.coerceIn(0, patches.lastIndex)].second.second
+        2 -> patches[patchIndex.coerceIn(0, patches.lastIndex)].hint
         else -> ""
     }
 
     // Current patch name (for step 3)
     val currentPatchName: String = when (stage) {
-        2 -> patches[patchIndex.coerceIn(0, patches.lastIndex)].first
+        2 -> patches[patchIndex.coerceIn(0, patches.lastIndex)].name
         else -> ""
     }
 
