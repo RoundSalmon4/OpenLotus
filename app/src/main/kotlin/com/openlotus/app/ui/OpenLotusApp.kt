@@ -89,6 +89,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import java.util.Calendar
+import kotlin.collections.mutableSetOf
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -1037,6 +1038,8 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
     var patchIndex by rememberSaveable { mutableStateOf(0) }
     var showAdvanced by rememberSaveable { mutableStateOf(false) }
     var seeded by rememberSaveable { mutableStateOf(false) }
+    // Track which patches the user has confirmed as matching
+    var confirmedPatches by rememberSaveable { mutableStateOf(mutableSetOf<Int>()) }
 
     LaunchedEffect(Unit) {
         if (seeded) return@LaunchedEffect
@@ -1048,24 +1051,44 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
         seeded = true
     }
 
+    // Patch definitions: name -> (target RGB, hint for adjustment)
     val patches = listOf(
-        "White" to Triple(255, 255, 255),
-        "Gray" to Triple(128, 128, 128),
-        "Red" to Triple(255, 0, 0),
-        "Green" to Triple(0, 255, 0),
-        "Blue" to Triple(0, 0, 255),
-        "Yellow" to Triple(255, 255, 0),
-        "Cyan" to Triple(0, 255, 255),
-        "Magenta" to Triple(255, 0, 255),
-        "Orange" to Triple(255, 128, 0),
+        "White" to Triple(Triple(255, 255, 255), "Adjust white balance in Step 1"),
+        "Gray" to Triple(Triple(128, 128, 128), "Adjust gamma in Step 2"),
+        "Red" to Triple(Triple(255, 0, 0), "If too orange: lower green. If too pink: lower blue."),
+        "Green" to Triple(Triple(0, 255, 0), "If too yellow: lower red. If too cyan: lower blue."),
+        "Blue" to Triple(Triple(0, 0, 255), "If too cyan: lower green. If too purple: lower red."),
+        "Yellow" to Triple(Triple(255, 255, 0), "If too green: lower green. If too orange: lower red."),
+        "Cyan" to Triple(Triple(0, 255, 255), "If too green: lower green. If too blue: lower blue."),
+        "Magenta" to Triple(Triple(255, 0, 255), "If too red: lower red. If too blue: lower blue."),
+        "Orange" to Triple(Triple(255, 128, 0), "If too yellow: lower green. If too red: lower red."),
     )
 
+    // Current target color based on stage
     val target: Triple<Int, Int, Int> = when (stage) {
         0 -> Triple(255, 255, 255)
         1 -> Triple(64, 64, 64)
-        2 -> patches[patchIndex.coerceIn(0, patches.lastIndex)].second
+        2 -> patches[patchIndex.coerceIn(0, patches.lastIndex)].second.first
         else -> Triple(255, 255, 255)
     }
+
+    // Current patch hint (for step 3)
+    val currentPatchHint: String = when (stage) {
+        2 -> patches[patchIndex.coerceIn(0, patches.lastIndex)].second.second
+        else -> ""
+    }
+
+    // Current patch name (for step 3)
+    val currentPatchName: String = when (stage) {
+        2 -> patches[patchIndex.coerceIn(0, patches.lastIndex)].first
+        else -> ""
+    }
+
+    // Whether current patch is confirmed
+    val isCurrentPatchConfirmed: Boolean = confirmedPatches.contains(patchIndex)
+
+    // All patches confirmed (for enabling save)
+    val allPatchesConfirmed = confirmedPatches.size == patches.size
 
     fun applyCal() {
         ColorCal.current = Calibration(redGain, greenGain, blueGain, gamma)
@@ -1087,9 +1110,21 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
         sendTarget()
     }
 
+    fun resetStep(step: Int) {
+        when (step) {
+            0 -> { redGain = 1f; greenGain = 1f; blueGain = 1f }
+            1 -> { gamma = 1f }
+            2 -> { confirmedPatches.remove(patchIndex) }
+        }
+        sendTarget()
+    }
+
     LaunchedEffect(stage, patchIndex, connected) {
         if (connected) sendTarget()
     }
+
+    // Stepper labels
+    val stepLabels = listOf("White Balance", "Gamma / Dim", "Color Check")
 
     Column(
         modifier = Modifier
@@ -1101,6 +1136,51 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
         if (!connected) {
             Text("Connect to a strip first.", style = MaterialTheme.typography.bodyMedium)
         }
+
+        // Progress stepper
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            stepLabels.forEachIndexed { index, label ->
+                val isCurrent = stage == index
+                val isDone = stage > index || (stage == 3 && index < 3)
+                val color = if (isDone) MaterialTheme.colorScheme.primary
+                else if (isCurrent) MaterialTheme.colorScheme.secondary
+                else MaterialTheme.colorScheme.outline
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        "${index + 1}",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            color = if (isDone || isCurrent) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                    )
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelSmall.copy(color = color),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                if (index < stepLabels.lastIndex) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(2.dp)
+                            .background(if (stage > index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+                            .padding(top = 10.dp),
+                    )
+                }
+            }
+        }
+
+        HorizontalDivider()
+
         Text("Calibrate the strip", style = MaterialTheme.typography.titleSmall)
         Text(
             "This strip's red, green and blue are not even, so the same numbers can " +
@@ -1110,13 +1190,12 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
         )
 
         Text(
-            "Keep looking at the strip. It runs the steps for you, so most of this is " +
-                "just tapping the button that matches what you see.",
+            "Keep looking at the strip. Each step shows sliders so you can adjust " +
+                "by eye instead of tapping blindly.",
             style = MaterialTheme.typography.bodySmall,
         )
 
-        // The reference the user matches against. It is the color we asked for, not
-        // the corrected one, because the phone screen is already accurate.
+        // Reference swatch (target color on phone screen)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1132,6 +1211,26 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                 style = MaterialTheme.typography.labelMedium,
             )
         }
+
+        // Corrected preview swatch (what the strip should show after calibration)
+        val (cr, cg, cb) = ColorCal.apply(target.first, target.second, target.third)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .clip(MaterialTheme.shapes.small)
+                .background(Color(AndroidColor.rgb(cr, cg, cb)))
+                .border(1.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small)
+                .padding(top = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "Corrected preview: ${hex(AndroidColor.rgb(cr, cg, cb))}",
+                color = if (cr + cg + cb > 380) Color.Black else Color.White,
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+
         Text(
             "Sending ${hex(AndroidColor.rgb(target.first, target.second, target.third))} " +
                 "as ${hex(ColorCal.packed(target.first, target.second, target.third))} after correction",
@@ -1141,115 +1240,199 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
         HorizontalDivider()
 
         when (stage) {
-            0 -> {
-                Text("Step 1 of 3: make the white neutral", style = MaterialTheme.typography.titleSmall)
+            0 -> { // Step 1: White Balance
+                Text("Step 1 of 3: White Balance", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "The strip is showing plain white. Look at it and tap the one that " +
-                        "fits. Each tap nudges it a little, so tap a few times until it " +
-                        "looks like a clean white with no color tint.",
+                    "The strip is showing white. Adjust each channel until the light looks like a clean white " +
+                        "with no color tint. The sliders show the current gain for each channel.",
                     style = MaterialTheme.typography.bodySmall,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { AppLog.d(TAG, "cal cast green"); nudge(1f, 0.85f, 1f) }) {
-                        Text("Too green")
-                    }
-                    OutlinedButton(onClick = { AppLog.d(TAG, "cal cast red"); nudge(0.85f, 1f, 1f) }) {
-                        Text("Too red or pink")
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { AppLog.d(TAG, "cal cast blue"); nudge(1f, 1f, 0.85f) }) {
-                        Text("Too blue")
-                    }
-                    OutlinedButton(onClick = { AppLog.d(TAG, "cal cast yellow"); nudge(0.9f, 0.9f, 1f) }) {
-                        Text("Too yellow")
-                    }
-                }
+
+                // Red gain slider
+                LabeledSlider(
+                    label = "Red gain ${"%.2f".format(redGain)} (lower if pink/red tint)",
+                    value = redGain,
+                    range = 0.05f..2f,
+                    enabled = connected,
+                    onChange = { redGain = it },
+                    onFinished = { sendTarget() },
+                )
+                // Green gain slider
+                LabeledSlider(
+                    label = "Green gain ${"%.2f".format(greenGain)} (lower if green/yellow tint)",
+                    value = greenGain,
+                    range = 0.05f..2f,
+                    enabled = connected,
+                    onChange = { greenGain = it },
+                    onFinished = { sendTarget() },
+                )
+                // Blue gain slider
+                LabeledSlider(
+                    label = "Blue gain ${"%.2f".format(blueGain)} (lower if blue/cold tint)",
+                    value = blueGain,
+                    range = 0.05f..2f,
+                    enabled = connected,
+                    onChange = { blueGain = it },
+                    onFinished = { sendTarget() },
+                )
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {
-                        AppLog.d(TAG, "cal reset")
-                        redGain = 1f
-                        greenGain = 1f
-                        blueGain = 1f
-                        gamma = 1f
+                        AppLog.d(TAG, "cal reset step 1")
+                        redGain = 1f; greenGain = 1f; blueGain = 1f
                         sendTarget()
-                    }) { Text("Reset") }
+                    }) { Text("Reset this step") }
                     Button(
                         onClick = { AppLog.d(TAG, "cal to step 2"); stage = 1 },
                         enabled = connected,
-                    ) { Text("It is white now") }
+                    ) { Text("White looks neutral →") }
                 }
             }
-            1 -> {
-                Text("Step 2 of 3: match the dim level", style = MaterialTheme.typography.titleSmall)
+
+            1 -> { // Step 2: Gamma / Dim Level
+                Text("Step 2 of 3: Gamma / Dim Level", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "The strip is showing a dim gray. If it looks brighter than the patch, " +
-                        "tap darker. If it looks dimmer, tap brighter. This sets the gamma " +
-                        "curve.",
+                    "The strip is showing a dim gray. Adjust gamma until the brightness matches the reference patch. " +
+                        "Lower gamma = darker at low levels. Higher gamma = brighter at low levels.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+
+                LabeledSlider(
+                    label = "Gamma ${"%.2f".format(gamma)} (shapes dim end, 1.00 is neutral)",
+                    value = gamma,
+                    range = 0.5f..2f,
+                    enabled = connected,
+                    onChange = { gamma = it },
+                    onFinished = { sendTarget() },
+                )
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {
-                        AppLog.d(TAG, "cal dim brighter")
-                        gamma = (gamma * 0.9f).coerceIn(0.5f, 2f)
+                        AppLog.d(TAG, "cal reset step 2")
+                        gamma = 1f
                         sendTarget()
-                    }) { Text("Brighter") }
-                    OutlinedButton(onClick = {
-                        AppLog.d(TAG, "cal dim darker")
-                        gamma = (gamma * 1.1f).coerceIn(0.5f, 2f)
-                        sendTarget()
-                    }) { Text("Darker") }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    }) { Text("Reset this step") }
                     OutlinedButton(onClick = { AppLog.d(TAG, "cal back to step 1"); stage = 0 }) {
-                        Text("Back")
+                        Text("← Back")
                     }
                     Button(
                         onClick = { AppLog.d(TAG, "cal to step 3"); patchIndex = 0; stage = 2 },
                         enabled = connected,
-                    ) { Text("It matches") }
+                    ) { Text("Gray matches →") }
                 }
             }
-            2 -> {
-                Text("Step 3 of 3: check the colors", style = MaterialTheme.typography.titleSmall)
+
+            2 -> { // Step 3: Color Verification
+                Text("Step 3 of 3: Color Check", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "The strip now walks through reference colors. Tap Next if the light " +
-                        "matches the patch, or go back to the white step if a color looks " +
-                        "off.",
+                    "The strip cycles through reference colors. For each one, confirm it matches the patch " +
+                        "or adjust the relevant channel. Tap 'This matches' to mark it done.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+
                 Text(
-                    "This checks the hue. Step 2 already set the dim end, so ignore small " +
-                        "brightness differences.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Text(
-                    "Patch ${patchIndex + 1} of ${patches.size}: ${patches[patchIndex].first}",
+                    "Patch ${patchIndex + 1} of ${patches.size}: $currentPatchName",
                     style = MaterialTheme.typography.titleSmall,
                 )
+
+                // Patch hint
+                if (currentPatchHint.isNotBlank()) {
+                    Text(
+                        "Hint: $currentPatchHint",
+                        style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.secondary),
+                    )
+                }
+
+                // Navigation
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { patchIndex = (patchIndex - 1 + patches.size) % patches.size },
-                    ) { Text("Previous") }
+                        enabled = patchIndex > 0,
+                    ) { Text("← Previous") }
                     if (patchIndex < patches.lastIndex) {
                         OutlinedButton(
                             onClick = { patchIndex += 1 },
-                        ) { Text("Next") }
+                        ) { Text("Next →") }
                     }
                 }
+
+                // Confirm / Adjust buttons
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { AppLog.d(TAG, "cal back to white"); stage = 0 }) {
-                        Text("Back to white")
+                    Button(
+                        onClick = {
+                            AppLog.d(TAG, "cal patch $patchIndex confirmed")
+                            confirmedPatches.add(patchIndex)
+                            if (patchIndex < patches.lastIndex) patchIndex += 1
+                        },
+                        enabled = connected,
+                        colors = if (isCurrentPatchConfirmed)
+                            ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        else ButtonDefaults.buttonColors(),
+                    ) {
+                        Text(if (isCurrentPatchConfirmed) "✓ This matches" else "This matches")
                     }
-                    Button(onClick = {
-                        applyCal()
-                        AppLog.d(TAG, "save calibration r=$redGain g=$greenGain b=$blueGain gamma=$gamma")
-                        scope.launch { store.setCalibration(redGain, greenGain, blueGain, gamma) }
-                        stage = 3
-                    }) { Text("Save calibration") }
+                    OutlinedButton(
+                        onClick = { AppLog.d(TAG, "cal back to white"); stage = 0 },
+                    ) { Text("← Back to white") }
+                }
+
+                // Show adjustment slider for the current patch based on hint
+                // Parse hint to determine which slider to show
+                val showRedSlider = currentPatchHint.contains("lower red") || currentPatchHint.contains("too red") || currentPatchHint.contains("too pink")
+                val showGreenSlider = currentPatchHint.contains("lower green") || currentPatchHint.contains("too green") || currentPatchHint.contains("too yellow") || currentPatchHint.contains("too cyan")
+                val showBlueSlider = currentPatchHint.contains("lower blue") || currentPatchHint.contains("too blue") || currentPatchHint.contains("too purple") || currentPatchHint.contains("too cyan")
+
+                if (showRedSlider) {
+                    LabeledSlider(
+                        label = "Red gain ${"%.2f".format(redGain)} (lower if too red/pink)",
+                        value = redGain,
+                        range = 0.05f..2f,
+                        enabled = connected,
+                        onChange = { redGain = it },
+                        onFinished = { sendTarget() },
+                    )
+                }
+                if (showGreenSlider) {
+                    LabeledSlider(
+                        label = "Green gain ${"%.2f".format(greenGain)} (lower if too green/yellow/cyan)",
+                        value = greenGain,
+                        range = 0.05f..2f,
+                        enabled = connected,
+                        onChange = { greenGain = it },
+                        onFinished = { sendTarget() },
+                    )
+                }
+                if (showBlueSlider) {
+                    LabeledSlider(
+                        label = "Blue gain ${"%.2f".format(blueGain)} (lower if too blue/cyan/purple)",
+                        value = blueGain,
+                        range = 0.05f..2f,
+                        enabled = connected,
+                        onChange = { blueGain = it },
+                        onFinished = { sendTarget() },
+                    )
+                }
+
+                // Save button (enabled when all patches confirmed or user forces it)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { AppLog.d(TAG, "cal reset step 3"); confirmedPatches.clear() }) {
+                        Text("Reset all confirmations")
+                    }
+                    Button(
+                        onClick = {
+                            applyCal()
+                            AppLog.d(TAG, "save calibration r=$redGain g=$greenGain b=$blueGain gamma=$gamma")
+                            scope.launch { store.setCalibration(redGain, greenGain, blueGain, gamma) }
+                            stage = 3
+                        },
+                        enabled = connected && (allPatchesConfirmed || confirmedPatches.isNotEmpty()),
+                    ) {
+                        Text(if (allPatchesConfirmed) "All confirmed – Save" else "Save calibration (${confirmedPatches.size}/${patches.size} confirmed)")
+                    }
                 }
             }
-            else -> {
+
+            else -> { // stage == 3: Saved
                 Text("Saved", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "Done. The correction is applied to colors you pick and to the " +
@@ -1257,12 +1440,18 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                         "strip's own effects, so they are not corrected.",
                     style = MaterialTheme.typography.bodySmall,
                 )
-                Button(onClick = { AppLog.d(TAG, "cal run again"); stage = 0; patchIndex = 0 }) {
-                    Text("Run it again")
+                Button(onClick = {
+                    AppLog.d(TAG, "cal run again")
+                    stage = 0
+                    patchIndex = 0
+                    confirmedPatches.clear()
+                }) {
+                    Text("Run calibration again")
                 }
             }
         }
 
+        // Advanced manual sliders (collapsible, always available)
         OutlinedButton(onClick = {
             AppLog.d(TAG, "cal advanced toggle $showAdvanced")
             showAdvanced = !showAdvanced
