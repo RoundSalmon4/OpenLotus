@@ -82,6 +82,7 @@ import com.openlotus.app.color.ColorCal
 import com.openlotus.app.data.SettingsStore
 import com.openlotus.app.log.AppLog
 import com.openlotus.protocol.Commands
+import com.openlotus.protocol.Frame
 import com.openlotus.protocol.LightMode
 import com.openlotus.protocol.Mode
 import kotlinx.coroutines.CoroutineScope
@@ -1048,6 +1049,10 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
         greenGain = loaded.calGreenGain
         blueGain = loaded.calBlueGain
         gamma = loaded.calGamma
+        AppLog.d(
+            TAG,
+            "cal loaded from store r=${loaded.calRedGain} g=${loaded.calGreenGain} b=${loaded.calBlueGain} gamma=${loaded.calGamma}",
+        )
         seeded = true
     }
 
@@ -1105,10 +1110,14 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
     fun sendTarget() {
         applyCal()
         val (r, g, b) = target
-        if (connected) {
-            AppLog.d(TAG, "cal target ${hex(AndroidColor.rgb(r, g, b))} -> out ${hex(ColorCal.packed(r, g, b))}")
-            ble.send(ColorCal.frame(r, g, b))
-        }
+        val frame = ColorCal.frame(r, g, b)
+        AppLog.d(
+            TAG,
+            "cal send frame=${Frame.hex(frame)} cal=${ColorCal.current} " +
+                "target=#${hex(AndroidColor.rgb(r, g, b))} " +
+                "out=#${hex(ColorCal.packed(r, g, b))}",
+        )
+        if (connected) ble.send(frame)
     }
 
     fun nudge(scaleR: Float, scaleG: Float, scaleB: Float) {
@@ -1262,7 +1271,10 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                     value = redGain,
                     range = 0.05f..2f,
                     enabled = connected,
-                    onChange = { redGain = it },
+                    onChange = {
+                        redGain = it
+                        AppLog.d(TAG, "cal slider redGain=$redGain")
+                    },
                     onFinished = { sendTarget() },
                 )
                 // Green gain slider
@@ -1271,7 +1283,10 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                     value = greenGain,
                     range = 0.05f..2f,
                     enabled = connected,
-                    onChange = { greenGain = it },
+                    onChange = {
+                        greenGain = it
+                        AppLog.d(TAG, "cal slider greenGain=$greenGain")
+                    },
                     onFinished = { sendTarget() },
                 )
                 // Blue gain slider
@@ -1280,7 +1295,10 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                     value = blueGain,
                     range = 0.05f..2f,
                     enabled = connected,
-                    onChange = { blueGain = it },
+                    onChange = {
+                        blueGain = it
+                        AppLog.d(TAG, "cal slider blueGain=$blueGain")
+                    },
                     onFinished = { sendTarget() },
                 )
 
@@ -1310,7 +1328,10 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                     value = gamma,
                     range = 0.5f..2f,
                     enabled = connected,
-                    onChange = { gamma = it },
+                    onChange = {
+                        gamma = it
+                        AppLog.d(TAG, "cal slider gamma=$gamma")
+                    },
                     onFinished = { sendTarget() },
                 )
 
@@ -1396,7 +1417,10 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                         value = redGain,
                         range = 0.05f..2f,
                         enabled = connected,
-                        onChange = { redGain = it },
+                        onChange = {
+                            redGain = it
+                            AppLog.d(TAG, "cal slider redGain=$redGain")
+                        },
                         onFinished = { sendTarget() },
                     )
                 }
@@ -1406,7 +1430,10 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                         value = greenGain,
                         range = 0.05f..2f,
                         enabled = connected,
-                        onChange = { greenGain = it },
+                        onChange = {
+                            greenGain = it
+                            AppLog.d(TAG, "cal slider greenGain=$greenGain")
+                        },
                         onFinished = { sendTarget() },
                     )
                 }
@@ -1416,7 +1443,10 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                         value = blueGain,
                         range = 0.05f..2f,
                         enabled = connected,
-                        onChange = { blueGain = it },
+                        onChange = {
+                            blueGain = it
+                            AppLog.d(TAG, "cal slider blueGain=$blueGain")
+                        },
                         onFinished = { sendTarget() },
                     )
                 }
@@ -1479,7 +1509,10 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                 value = redGain,
                 range = 0.05f..2f,
                 enabled = true,
-                onChange = { redGain = it },
+                onChange = {
+                    redGain = it
+                    AppLog.d(TAG, "cal slider redGain=$redGain")
+                },
                 onFinished = { sendTarget() },
             )
             LabeledSlider(
@@ -1487,7 +1520,10 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                 value = greenGain,
                 range = 0.05f..2f,
                 enabled = true,
-                onChange = { greenGain = it },
+                onChange = {
+                    greenGain = it
+                    AppLog.d(TAG, "cal slider greenGain=$greenGain")
+                },
                 onFinished = { sendTarget() },
             )
             LabeledSlider(
@@ -1495,7 +1531,10 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                 value = blueGain,
                 range = 0.05f..2f,
                 enabled = true,
-                onChange = { blueGain = it },
+                onChange = {
+                    blueGain = it
+                    AppLog.d(TAG, "cal slider blueGain=$blueGain")
+                },
                 onFinished = { sendTarget() },
             )
             LabeledSlider(
@@ -1503,7 +1542,10 @@ private fun CalibrateScreen(ble: BleManager, scope: CoroutineScope, store: Setti
                 value = gamma,
                 range = 0.5f..2f,
                 enabled = true,
-                onChange = { gamma = it },
+                onChange = {
+                    gamma = it
+                    AppLog.d(TAG, "cal slider gamma=$gamma")
+                },
                 onFinished = { sendTarget() },
             )
         }
